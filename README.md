@@ -1,9 +1,13 @@
 # 🔍 Sherlog-parser
 
-A powerful, intelligent log parsing and analysis tool that uses machine learning to automatically cluster and extract patterns from log files.
+A powerful, intelligent log parsing and analysis tool that leverages Large Language Models (LLMs) and machine learning to automatically cluster, analyze, and extract patterns from log files. Built with state-of-the-art LLMs at its core, it provides deep semantic understanding of your logs.
 
 ## ✨ Features
 
+- 🤖 **LLM-Powered Analysis**:
+  - Deep semantic understanding using state-of-the-art LLMs
+  - Support for multiple LLM providers (OpenAI, local LLaMA, etc.)
+  - Intelligent context extraction and summarization
 - 🧠 **Intelligent Log Clustering**: Uses embeddings and incremental clustering to group similar log messages
 - 🎯 **Pattern Extraction**: Automatically extracts regex patterns from log clusters
 - ⚡ **High Performance**:

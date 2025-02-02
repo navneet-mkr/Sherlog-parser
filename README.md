@@ -1,27 +1,27 @@
-# Sherlog-parser
+# 🔍 Sherlog-parser
 
 A powerful, intelligent log parsing and analysis tool that uses machine learning to automatically cluster and extract patterns from log files.
 
-## Features
+## ✨ Features
 
-- **Intelligent Log Clustering**: Uses embeddings and incremental clustering to group similar log messages
-- **Pattern Extraction**: Automatically extracts regex patterns from log clusters
-- **High Performance**:
-  - Efficient caching of embeddings using `diskcache`
-  - Incremental clustering with scikit-learn
-  - Batch processing for large log files
-- **Production Ready**:
-  - Type-safe with Pydantic models
-  - Configurable via YAML and environment variables
-  - Extensive test coverage
-  - Proper error handling and logging
-- **Advanced Pipeline**:
-  - Built with Dagster for robust pipeline orchestration
-  - Visual pipeline UI for debugging and monitoring
-  - Automatic dependency management
-  - Asset tracking and materialization
+- 🧠 **Intelligent Log Clustering**: Uses embeddings and incremental clustering to group similar log messages
+- 🎯 **Pattern Extraction**: Automatically extracts regex patterns from log clusters
+- ⚡ **High Performance**:
+  - 💾 Efficient caching of embeddings using `diskcache`
+  - 📊 Incremental clustering with scikit-learn
+  - 📦 Batch processing for large log files
+- 🚀 **Production Ready**:
+  - 🛡️ Type-safe with Pydantic models
+  - ⚙️ Configurable via YAML and environment variables
+  - ✅ Extensive test coverage
+  - 🔄 Proper error handling and logging
+- 🔄 **Advanced Pipeline**:
+  - 🏗️ Built with Dagster for robust pipeline orchestration
+  - 📊 Visual pipeline UI for debugging and monitoring
+  - 📦 Automatic dependency management
+  - 📝 Asset tracking and materialization
 
-## Installation
+## 🛠️ Installation
 
 ```bash
 # Clone the repository
@@ -36,18 +36,18 @@ source venv/bin/activate  # On Windows: .\venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Documentation
+## 📚 Documentation
 
 The complete documentation is available in two formats:
 
-### Online Documentation
+### 🌐 Online Documentation
 
 Visit our [Documentation Site](https://yourusername.github.io/sherlog-parser) for:
-- Detailed API reference
-- User guides
-- Configuration options
-- Development guidelines
-- Architecture overview
+- 📖 Detailed API reference
+- 👥 User guides
+- ⚙️ Configuration options
+- 🏗️ Development guidelines
+- 🔍 Architecture overview
 
 ### Local Documentation
 
@@ -66,7 +66,7 @@ mkdocs serve
 
 Then visit `http://127.0.0.1:8000` in your web browser.
 
-## Quick Start
+## 🚀 Quick Start
 
 ```python
 from sherlog_parser import LogParser
@@ -86,7 +86,7 @@ for cluster in clusters:
     print(f"Sample lines: {cluster.sample_lines[:3]}")
 ```
 
-## Quick Start with Docker
+## 🐳 Quick Start with Docker
 
 The easiest way to get started is using Docker Compose:
 
@@ -100,15 +100,15 @@ This will:
 2. Launch the Streamlit UI on http://localhost:8501
 3. Start the Dagster pipeline service on http://localhost:3000
 
-### Using the Application
+### 🎮 Using the Application
 
-1. **Access the Streamlit UI**:
+1. **🖥️ Access the Streamlit UI**:
    - Open your browser and go to `http://localhost:8501`
    - Upload your log file using the file uploader
    - Adjust the number of clusters and batch size if needed
    - Click "Analyze Logs" to start processing
 
-2. **Monitor Pipeline Progress**:
+2. **📊 Monitor Pipeline Progress**:
    - The Dagster UI will be available at `http://localhost:3000`
    - You'll get a Run ID after starting the analysis
    - Use the Dagster UI to:
@@ -117,14 +117,14 @@ This will:
      - Access results and visualizations
      - Debug any issues if they occur
 
-3. **View Results**:
+3. **📈 View Results**:
    - After processing completes, you'll see:
      - Extracted patterns from your logs
      - Cluster information and statistics
      - Sample log lines for each pattern
      - Pattern confidence scores
 
-### Docker Services
+### 🔧 Docker Services
 
 The application runs three main services:
 1. **Base**: Contains core dependencies and shared code
@@ -137,7 +137,7 @@ All services are configured to work together out of the box, with:
 - Persistent storage for results
 - Environment variable configuration
 
-## Configuration
+## ⚙️ Configuration
 
 Configuration can be provided via `config.yaml` or environment variables:
 
@@ -167,21 +167,21 @@ model:
   random_seed: 42
 ```
 
-## Architecture
+## 🏗️ Architecture
 
 The project follows a modular architecture with clear separation of concerns:
 
-- **Core Components**:
+- **🔧 Core Components**:
   - `embeddings.py`: Handles text embedding generation and caching
   - `clustering.py`: Implements incremental clustering and pattern extraction
   - `config.py`: Manages configuration and settings
 
-- **Models**:
+- **📊 Models**:
   - `clustering.py`: Models for clustering state and predictions
 
-## Usage Guide
+## 📖 Usage Guide
 
-### Using the Streamlit UI
+### 🖥️ Using the Streamlit UI
 
 The Streamlit UI provides an interactive interface for analyzing log files. To start the UI:
 

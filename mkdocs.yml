@@ -1,0 +1,74 @@
+site_name: Sherlog-parser
+site_description: A powerful, intelligent log parsing and analysis tool
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            show_bases: true
+            heading_level: 2
+
+nav:
+  - Home: index.md
+  - User Guide:
+    - Installation: user-guide/installation.md
+    - Quick Start: user-guide/quickstart.md
+    - Configuration: user-guide/configuration.md
+    - Docker Setup: user-guide/docker.md
+  - API Reference:
+    - Core:
+      - Pipeline: api/core/pipeline.md
+      - Embeddings: api/core/embeddings.md
+      - Clustering: api/core/clustering.md
+      - Errors: api/core/errors.md
+    - Models:
+      - Data Models: api/models/data.md
+      - Clustering Models: api/models/clustering.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Architecture: development/architecture.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true 

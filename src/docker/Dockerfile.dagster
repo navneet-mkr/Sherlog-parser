@@ -1,0 +1,32 @@
+FROM sherlog-parser-base:latest
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Create and set Dagster home directory
+ENV DAGSTER_HOME=/opt/dagster/dagster_home
+RUN mkdir -p $DAGSTER_HOME
+
+# Set working directory
+WORKDIR /app
+
+# Install additional dependencies
+RUN pip install --no-cache-dir \
+    numpy \
+    scikit-learn \
+    sentence-transformers \
+    pydantic \
+    pydantic-settings
+
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+cp /app/src/config/dagster.yaml $DAGSTER_HOME/\n\
+cp /app/src/config/workspace.yaml $DAGSTER_HOME/\n\
+export PYTHONPATH=/app:$PYTHONPATH\n\
+# Verify Python can find our modules\n\
+python3 -c "import src.core.pipeline; print(\\"Pipeline module loaded successfully\\")" || exit 1\n\
+exec dagster dev -h 0.0.0.0 -p 3000 -w $DAGSTER_HOME/workspace.yaml\n'\
+> /start.sh && chmod +x /start.sh
+
+# Start using the script
+CMD ["/start.sh"] 

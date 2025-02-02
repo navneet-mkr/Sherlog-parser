@@ -1,0 +1,29 @@
+# Application configuration
+env: development
+debug: false
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_path: logs/app.log
+
+# Cache configuration
+cache:
+  enabled: true
+  directory: cache
+  max_size_mb: 1024
+  ttl_days: 30
+
+# Model configuration
+model:
+  embedding_model: all-MiniLM-L6-v2
+  n_clusters: 20
+  batch_size: 1000
+  random_seed: 42
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  prometheus_port: 8000
+  update_interval: 15.0 

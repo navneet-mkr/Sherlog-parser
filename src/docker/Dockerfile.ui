@@ -1,0 +1,13 @@
+FROM sherlog-parser-base:latest
+
+# Expose Streamlit port
+EXPOSE 8501
+
+# Create directories for mounted volumes
+RUN mkdir -p /data/logs /data/cache
+
+# Set working directory
+WORKDIR /app
+
+# Start Streamlit
+CMD ["streamlit", "run", "src/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"] 

@@ -1,0 +1,4 @@
+load_from:
+  - python_module:
+      module_name: src.core.pipeline
+      working_directory: /app 

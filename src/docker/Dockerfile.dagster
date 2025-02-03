@@ -1,14 +1,35 @@
-FROM sherlog-parser-base:latest
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY setup.py .
+RUN pip install -e .[dev]
+
+# Create necessary directories
+RUN mkdir -p /data/dagster_home /data/cache /data/logs
+
+# Copy Dagster instance configuration
+COPY src/config/dagster.yaml /data/dagster_home/dagster.yaml
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV DAGSTER_HOME=/data/dagster_home
+
+# Copy source code
+COPY src ./src
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Create and set Dagster home directory
-ENV DAGSTER_HOME=/opt/dagster/dagster_home
 RUN mkdir -p $DAGSTER_HOME
-
-# Set working directory
-WORKDIR /app
 
 # Install additional dependencies
 RUN pip install --no-cache-dir \

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  dagster:
+    build:
+      context: .
+      dockerfile: src/docker/Dockerfile.dagster
+    ports:
+      - "3000:3000"
+      - "4000:4000"  # gRPC server port
+    volumes:
+      - .:/app
+      - dagster_data:/data
+      - dagster_tmp:/tmp/dagster  # Use named volume for temp directory
+    environment:
+      - DAGSTER_HOME=/data/dagster_home
+      - PYTHONPATH=/app
+      - DAGSTER_GRPC_HOST=0.0.0.0
+      - DAGSTER_GRPC_PORT=4000
+    command: |
+      bash -c "
+        mkdir -p /data/dagster_home &&
+        cp /app/src/config/workspace.yaml /data/dagster_home/ &&
+        dagster dev -h 0.0.0.0 -p 3000 --grpc-host 0.0.0.0 --grpc-port 4000
+      "
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: src/docker/Dockerfile.streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - dagster_data:/data
+      - dagster_tmp:/tmp/dagster  # Use same named volume for temp directory
+    environment:
+      - DAGSTER_HOST=dagster
+      - DAGSTER_PORT=3000
+      - PYTHONPATH=/app
+      - DAGSTER_GRPC_HOST=dagster
+      - DAGSTER_GRPC_PORT=4000
+    depends_on:
+      - dagster
+
+volumes:
+  dagster_data:
+  dagster_tmp:  # Define the named volume for temp directory 

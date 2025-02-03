@@ -7,21 +7,22 @@ from pathlib import Path
 from langchain.schema.language_model import BaseLanguageModel
 
 class ModelInfo(BaseModel):
-    """Information about a model."""
+    """Information about an Ollama model."""
     name: str
-    repo_id: str
-    filename: str
+    model_id: str
     description: str
-    context_length: int
-    memory_required: str
+    context_length: int = Field(default=4096)
+    parameters: Dict[str, Union[str, int, float]] = Field(default_factory=dict)
 
 class LLMConfig(BaseModel):
-    """Configuration for LLM usage."""
-    model_type: Literal["local", "api"]
-    model_name: str
-    api_key: Optional[str] = None
+    """Configuration for Ollama LLM usage."""
+    model_id: str
     temperature: float = Field(default=0.1, ge=0.0, le=1.0)
-    max_tokens: int = Field(default=2048, gt=0)
+    num_predict: int = Field(default=2048, gt=0)  # max_tokens in Ollama
+    top_k: int = Field(default=40, ge=0)
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+    repeat_penalty: float = Field(default=1.1, ge=0.0)
+    seed: Optional[int] = None
 
 class PipelineConfig(BaseModel):
     """Configuration for log processing pipeline."""
@@ -36,41 +37,52 @@ class RunConfig(BaseModel):
     ops: Dict
     resources: Dict
 
-# Model configurations
+# Available Ollama models with their configurations
 AVAILABLE_MODELS: Dict[str, ModelInfo] = {
-    "mistral-7b-instruct": ModelInfo(
-        name="Mistral 7B Instruct",
-        repo_id="TheBloke/Mistral-7B-Instruct-v0.1-GGUF",
-        filename="mistral-7b-instruct-v0.1.Q4_K_M.gguf",
-        description="Instruction-tuned version of Mistral 7B. Better for following specific instructions.",
+    "mistral": ModelInfo(
+        name="Mistral 7B",
+        model_id="mistral",
+        description="A powerful open-source language model with strong reasoning capabilities.",
         context_length=8192,
-        memory_required="8GB"
+        parameters={
+            "mirostat": 0,
+            "mirostat_eta": 0.1,
+            "mirostat_tau": 5.0,
+        }
     ),
-    "llama2-7b": ModelInfo(
-        name="Llama 2 7B",
-        repo_id="TheBloke/Llama-2-7B-GGUF",
-        filename="llama-2-7b.Q4_K_M.gguf",
-        description="Meta's latest model. Good all-round performance.",
+    "llama2": ModelInfo(
+        name="Llama 2",
+        model_id="llama2",
+        description="Meta's latest model optimized for chat and instruction following.",
         context_length=4096,
-        memory_required="8GB"
+        parameters={
+            "mirostat": 0,
+            "mirostat_eta": 0.1,
+            "mirostat_tau": 5.0,
+        }
+    ),
+    "codellama": ModelInfo(
+        name="Code Llama",
+        model_id="codellama",
+        description="Specialized model for code understanding and generation.",
+        context_length=16384,
+        parameters={
+            "mirostat": 0,
+            "mirostat_eta": 0.1,
+            "mirostat_tau": 5.0,
+        }
     )
 }
 
-class LLMSettings(BaseModel):
-    """Settings for LLM configuration."""
-    
-    provider_type: str = Field("openai", env='LLM_PROVIDER')
-    model_name: str = Field("gpt-4", env='LLM_MODEL_NAME')
-    model_path: Optional[str] = Field(None, env='LLM_MODEL_PATH')
-    openai_api_key: Optional[str] = Field(None, env='OPENAI_API_KEY')
-    max_tokens: int = Field(2000, env='LLM_MAX_TOKENS')
-    context_length: int = Field(8192, env='LLM_CONTEXT_LENGTH')
-    temperature: float = Field(0.1, env='LLM_TEMPERATURE')
+class OllamaSettings(BaseModel):
+    """Settings for Ollama configuration."""
+    host: str = Field("http://ollama", env='OLLAMA_HOST')
+    port: int = Field(11434, env='OLLAMA_PORT')
+    timeout: int = Field(120, env='OLLAMA_TIMEOUT')
 
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
-    
-    llm: LLMSettings = Field(default_factory=LLMSettings)
+    ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     embedding_model: str = Field("all-MiniLM-L6-v2", env='EMBEDDING_MODEL')
     chunk_size: int = Field(10000, env='CHUNK_SIZE')
     n_clusters: int = Field(20, env='N_CLUSTERS')

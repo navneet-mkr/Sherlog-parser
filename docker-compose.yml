@@ -19,6 +19,8 @@ services:
       - PYTHONPATH=/app
       - DAGSTER_GRPC_HOST=0.0.0.0
       - DAGSTER_GRPC_PORT=4000
+      - OLLAMA_HOST=http://ollama
+      - OLLAMA_PORT=11434
       - MODELS_DIR=/data/models
     command: |
       bash -c "
@@ -48,12 +50,53 @@ services:
       - PYTHONPATH=/app
       - DAGSTER_GRPC_HOST=dagster
       - DAGSTER_GRPC_PORT=4000
+      - OLLAMA_HOST=http://ollama
+      - OLLAMA_PORT=11434
       - MODELS_DIR=/data/models
     depends_on:
       - dagster
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  test:
+    build:
+      context: .
+      dockerfile: src/docker/Dockerfile.test
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONPATH=/app
+      - OLLAMA_HOST=http://ollama
+      - OLLAMA_PORT=11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    profiles:
+      - test
 
 volumes:
   dagster_data:
   dagster_home:  # Define the named volume for dagster_home
   dagster_tmp:  # Define the named volume for temp directory
-  model_storage:  # Define the volume for model storage 
+  model_storage:  # Define the volume for model storage
+  ollama_models: 

@@ -1,20 +1,22 @@
 import os
 import logging
 import streamlit as st
+import requests
 from pathlib import Path
 from dagster import DagsterInstance, JobDefinition
 from src.core import log_processing_job
-from langchain_community.llms import LlamaCpp
+from langchain_community.llms import Ollama
 from langchain_community.chat_models import ChatOpenAI
 from langchain.schema.language_model import BaseLanguageModel
 from huggingface_hub import hf_hub_download
-from typing import Optional, Dict, TypedDict, Literal, Union, Any
+from typing import Optional, Dict, TypedDict, Literal, Union, Any, List
 from src.models.config import (
     ModelInfo,
     LLMConfig,
     PipelineConfig,
     RunConfig,
-    AVAILABLE_MODELS
+    AVAILABLE_MODELS,
+    OllamaSettings
 )
 
 # Type definitions
@@ -48,6 +50,40 @@ DAGSTER_GRPC_PORT: str = os.getenv("DAGSTER_GRPC_PORT", "4000")
 DATA_DIR: Path = Path("/data/logs")
 MODELS_DIR: Path = Path("/data/models")
 
+# Initialize Ollama settings
+OLLAMA_SETTINGS = OllamaSettings(
+    host=os.getenv("OLLAMA_HOST", "http://localhost"),
+    port=int(os.getenv("OLLAMA_PORT", "11434"))
+)
+
+def get_available_models() -> Dict[str, ModelInfo]:
+    """Get list of available models from Ollama server."""
+    try:
+        response = requests.get(f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags")
+        if response.status_code == 200:
+            available_models = response.json().get("models", [])
+            return {
+                model["name"]: ModelInfo(
+                    name=model["name"],
+                    model_id=model["name"],
+                    description=AVAILABLE_MODELS.get(model["name"], ModelInfo(
+                        name=model["name"],
+                        model_id=model["name"],
+                        description="No description available"
+                    )).description,
+                    context_length=AVAILABLE_MODELS.get(model["name"], ModelInfo(
+                        name=model["name"],
+                        model_id=model["name"],
+                        description="No description available"
+                    )).context_length
+                )
+                for model in available_models
+                if not model["name"].endswith(":latest")  # Filter out latest tags
+            }
+    except Exception as e:
+        logger.error(f"Failed to fetch models from Ollama: {str(e)}")
+        return AVAILABLE_MODELS
+
 def get_llm(config: LLMConfig) -> Dict[str, Any]:
     """Get LLM instance based on configuration.
     
@@ -59,119 +95,99 @@ def get_llm(config: LLMConfig) -> Dict[str, Any]:
         
     Raises:
         RuntimeError: If model loading fails
-        ValueError: If API key is missing for API mode
     """
-    if config.model_type == "local":
-        model_info = AVAILABLE_MODELS[config.model_name]
+    try:
+        base_url = f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}"
         
-        try:
-            model_path = hf_hub_download(
-                repo_id=model_info.repo_id,
-                filename=model_info.filename,
-                cache_dir=str(MODELS_DIR),
-                resume_download=True
-            )
-            
-            llm = LlamaCpp(
-                model_path=model_path,
-                temperature=config.temperature,
-                max_tokens=config.max_tokens,
-                n_ctx=model_info.context_length,
-                verbose=True
-            )
-            
-            return {
-                "llm": llm,
-                "config": model_info.dict()
-            }
-            
-        except Exception as e:
-            logger.error(f"Error loading local model: {str(e)}")
-            raise RuntimeError(f"Failed to load model: {str(e)}")
-            
-    else:  # API mode
-        if not config.api_key:
-            raise ValueError("API key required for OpenAI models")
-            
-        llm = ChatOpenAI(
-            api_key=config.api_key,
-            model_name=config.model_name,
-            temperature=config.temperature
+        llm = Ollama(
+            base_url=base_url,
+            model=config.model_id,
+            temperature=config.temperature,
+            num_predict=config.num_predict,
+            top_k=config.top_k,
+            top_p=config.top_p,
+            repeat_penalty=config.repeat_penalty
         )
         
         return {
             "llm": llm,
             "config": {
-                "name": config.model_name,
-                "description": "OpenAI's model optimized for chat"
+                "name": config.model_id,
+                "description": AVAILABLE_MODELS.get(config.model_id, ModelInfo(
+                    name=config.model_id,
+                    model_id=config.model_id,
+                    description="Custom model"
+                )).description
             }
         }
+            
+    except Exception as e:
+        logger.error(f"Error initializing Ollama model: {str(e)}")
+        raise RuntimeError(f"Failed to initialize model: {str(e)}")
 
 def handle_model_selection() -> Optional[Dict[str, Any]]:
     """Handle model selection in the UI."""
     st.subheader("🤖 Model Selection")
     
-    model_type = st.radio(
-        "Select Model Type",
-        ["local", "api"],
-        format_func=lambda x: "Local Model (llama.cpp)" if x == "local" else "API (OpenAI)",
-        help="Choose between running models locally or using cloud APIs"
+    # Get available models
+    models = get_available_models()
+    
+    if not models:
+        st.error("❌ No models available. Please check if Ollama service is running.")
+        return None
+    
+    selected_model = st.selectbox(
+        "Select Model",
+        list(models.keys()),
+        format_func=lambda x: models[x].name,
+        help="Choose a model to use for log analysis"
     )
     
-    if model_type == "local":
-        selected_model = st.selectbox(
-            "Select Model",
-            list(AVAILABLE_MODELS.keys()),
-            format_func=lambda x: AVAILABLE_MODELS[x].name,
-            help="Choose a model to use for log analysis"
-        )
+    if selected_model:
+        model_info = models[selected_model]
+        st.markdown(f"**Description**: {model_info.description}")
+        st.markdown(f"**Context Length**: {model_info.context_length} tokens")
         
-        if selected_model:
-            model_info = AVAILABLE_MODELS[selected_model]
-            st.markdown(f"**Description**: {model_info.description}")
-            st.markdown(f"**Memory Required**: {model_info.memory_required}")
-            st.markdown(f"**Context Length**: {model_info.context_length} tokens")
+        # Advanced settings in expander
+        with st.expander("Advanced Settings"):
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.1,
+                step=0.1,
+                help="Higher values make the output more random"
+            )
             
-            try:
-                config = LLMConfig(
-                    model_type="local",
-                    model_name=selected_model
-                )
-                llm_config = get_llm(config)
-                st.success("✅ Model is ready to use")
-                return llm_config
-            except Exception as e:
-                st.error(f"Failed to load model: {str(e)}")
-                return None
-                
-    else:  # API mode
-        api_key = st.text_input(
-            "OpenAI API Key",
-            type="password",
-            help="Enter your OpenAI API key"
-        )
-        
-        if not api_key:
-            st.warning("⚠️ Please enter your OpenAI API key to use API mode")
-            return None
+            top_p = st.slider(
+                "Top P",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.9,
+                step=0.1,
+                help="Nucleus sampling threshold"
+            )
             
-        model_name = st.selectbox(
-            "Select OpenAI Model",
-            ["gpt-3.5-turbo", "gpt-4"],
-            help="Choose which OpenAI model to use"
-        )
+            top_k = st.slider(
+                "Top K",
+                min_value=1,
+                max_value=100,
+                value=40,
+                help="Limit the next token selection to K tokens"
+            )
         
         try:
             config = LLMConfig(
-                model_type="api",
-                model_name=model_name,
-                api_key=api_key
+                model_id=selected_model,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k
             )
             llm_config = get_llm(config)
-            st.success("✅ API connection successful")
+            st.success("✅ Model is ready to use")
             return llm_config
         except Exception as e:
-            st.error(f"Failed to initialize API: {str(e)}")
+            st.error(f"Failed to initialize model: {str(e)}")
             return None
 
 def init_dagster() -> DagsterInstance:
@@ -273,6 +289,125 @@ def save_uploaded_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedF
         logger.error(f"Failed to save uploaded file: {str(e)}")
         raise RuntimeError(f"Failed to save uploaded file: {str(e)}")
 
+def pull_model(model_id: str) -> bool:
+    """Pull a model from Ollama.
+    
+    Args:
+        model_id: ID of the model to pull
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        with st.spinner(f"Pulling model {model_id}..."):
+            response = requests.post(
+                f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/pull",
+                json={"name": model_id},
+                stream=True
+            )
+            
+            # Create a progress bar
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for line in response.iter_lines():
+                if line:
+                    data = line.decode('utf-8')
+                    status_text.text(f"Downloading: {data}")
+                    # Update progress if available in response
+                    if '"completed"' in data:
+                        progress_bar.progress(100)
+                        break
+            
+            status_text.empty()
+            return True
+    except Exception as e:
+        logger.error(f"Failed to pull model {model_id}: {str(e)}")
+        return False
+
+def delete_model(model_id: str) -> bool:
+    """Delete a model from Ollama.
+    
+    Args:
+        model_id: ID of the model to delete
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        response = requests.delete(
+            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/delete",
+            json={"name": model_id}
+        )
+        return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Failed to delete model {model_id}: {str(e)}")
+        return False
+
+def get_model_details(model_id: str) -> Optional[Dict]:
+    """Get detailed information about a model.
+    
+    Args:
+        model_id: ID of the model
+        
+    Returns:
+        Optional[Dict]: Model details if available
+    """
+    try:
+        response = requests.post(
+            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/show",
+            json={"name": model_id}
+        )
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        logger.error(f"Failed to get model details for {model_id}: {str(e)}")
+        return None
+
+def manage_models():
+    """Model management interface in the sidebar."""
+    st.sidebar.markdown("---")
+    st.sidebar.header("🛠️ Model Management")
+    
+    # Get current models
+    current_models = get_available_models()
+    
+    # Model pulling section
+    st.sidebar.subheader("📥 Pull New Model")
+    new_model = st.sidebar.text_input(
+        "Model Name",
+        help="Enter the name of the model to pull (e.g., llama2, mistral, codellama)"
+    )
+    
+    if st.sidebar.button("Pull Model", help="Download the specified model"):
+        if new_model:
+            if pull_model(new_model):
+                st.sidebar.success(f"✅ Successfully pulled {new_model}")
+            else:
+                st.sidebar.error(f"❌ Failed to pull {new_model}")
+    
+    # Model management section
+    if current_models:
+        st.sidebar.subheader("💾 Installed Models")
+        for model_id, info in current_models.items():
+            col1, col2 = st.sidebar.columns([3, 1])
+            with col1:
+                st.markdown(f"**{info.name}**")
+                
+                # Show model details in expander
+                with st.expander("Details"):
+                    details = get_model_details(model_id)
+                    if details:
+                        st.json(details)
+            
+            with col2:
+                if st.button("🗑️", key=f"delete_{model_id}", help=f"Delete {model_id}"):
+                    if delete_model(model_id):
+                        st.success(f"✅ Deleted {model_id}")
+                    else:
+                        st.error(f"❌ Failed to delete {model_id}")
+
 # Set page config
 st.set_page_config(
     page_title="Sherlog Parser",
@@ -285,6 +420,9 @@ try:
     st.title("🔍 Sherlog Parser")
     st.write("Upload your log file and analyze patterns using our advanced ML pipeline.")
 
+    # Add model management to sidebar
+    manage_models()
+    
     # Model selection
     model_config = handle_model_selection()
     

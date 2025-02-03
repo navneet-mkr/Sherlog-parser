@@ -13,10 +13,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install test dependencies
-RUN pip install --no-cache-dir pytest pytest-cov pytest-asyncio
+RUN pip install --no-cache-dir pytest pytest-cov pytest-asyncio pytest-timeout
 
 # Copy application code
 COPY . .
+
+# Make initialization script executable
+RUN chmod +x scripts/init_ollama.sh
 
 # Set environment variables
 ENV PYTHONPATH=/app
@@ -24,4 +27,4 @@ ENV OLLAMA_HOST=http://ollama
 ENV OLLAMA_PORT=11434
 
 # Command to run tests
-CMD ["pytest", "-v", "--cov=src", "tests/"] 
+CMD ["bash", "-c", "./scripts/init_ollama.sh && pytest -v --cov=src --cov-report=term-missing tests/"] 

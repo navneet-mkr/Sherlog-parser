@@ -11,16 +11,21 @@ services:
     volumes:
       - .:/app
       - dagster_data:/data
+      - dagster_home:/data/dagster_home  # Use named volume for dagster_home
       - dagster_tmp:/tmp/dagster  # Use named volume for temp directory
+      - model_storage:/data/models  # Add volume for model storage
     environment:
       - DAGSTER_HOME=/data/dagster_home
       - PYTHONPATH=/app
       - DAGSTER_GRPC_HOST=0.0.0.0
       - DAGSTER_GRPC_PORT=4000
+      - MODELS_DIR=/data/models
     command: |
       bash -c "
         mkdir -p /data/dagster_home &&
+        mkdir -p /data/models/cache &&
         cp /app/src/config/workspace.yaml /data/dagster_home/ &&
+        cp /app/src/config/dagster.yaml /data/dagster_home/ &&
         dagster dev -h 0.0.0.0 -p 3000 --grpc-host 0.0.0.0 --grpc-port 4000
       "
 
@@ -33,16 +38,22 @@ services:
     volumes:
       - .:/app
       - dagster_data:/data
+      - dagster_home:/data/dagster_home  # Share dagster_home volume
       - dagster_tmp:/tmp/dagster  # Use same named volume for temp directory
+      - model_storage:/data/models  # Share model storage volume
     environment:
+      - DAGSTER_HOME=/data/dagster_home
       - DAGSTER_HOST=dagster
       - DAGSTER_PORT=3000
       - PYTHONPATH=/app
       - DAGSTER_GRPC_HOST=dagster
       - DAGSTER_GRPC_PORT=4000
+      - MODELS_DIR=/data/models
     depends_on:
       - dagster
 
 volumes:
   dagster_data:
-  dagster_tmp:  # Define the named volume for temp directory 
+  dagster_home:  # Define the named volume for dagster_home
+  dagster_tmp:  # Define the named volume for temp directory
+  model_storage:  # Define the volume for model storage 

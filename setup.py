@@ -13,6 +13,10 @@ setup(
         "sentence-transformers",
         "diskcache",
         "pydantic",
+        "langchain",
+        "langchain-community",
+        "huggingface-hub",
+        "llama-cpp-python",
     ],
     extras_require={"dev": ["dagit", "pytest"]},
 ) 

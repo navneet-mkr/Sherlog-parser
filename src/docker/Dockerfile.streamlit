@@ -6,17 +6,32 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY setup.py .
 RUN pip install -e .
 
-# Create necessary directories
-RUN mkdir -p /data/cache /data/logs
+# Install additional dependencies for model handling
+RUN pip install --no-cache-dir \
+    torch \
+    llama-cpp-python \
+    psutil \
+    requests \
+    tqdm
+
+# Create necessary directories including dagster_home
+RUN mkdir -p /data/cache /data/logs /data/dagster_home /data/models/cache
+
+# Copy Dagster configuration files
+COPY src/config/dagster.yaml /data/dagster_home/
+COPY src/config/workspace.yaml /data/dagster_home/
 
 # Set environment variables
 ENV PYTHONPATH=/app
+ENV DAGSTER_HOME=/data/dagster_home
 
 # Copy source code
 COPY src ./src

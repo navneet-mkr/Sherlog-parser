@@ -43,12 +43,27 @@ RUN pip install --no-cache-dir \
 
 # Create a startup script
 RUN echo '#!/bin/bash\n\
+# Setup Dagster home\n\
+mkdir -p $DAGSTER_HOME\n\
 cp /app/src/config/dagster.yaml $DAGSTER_HOME/\n\
 cp /app/src/config/workspace.yaml $DAGSTER_HOME/\n\
+\n\
+# Clean up any existing SQLite databases to avoid conflicts\n\
+rm -f $DAGSTER_HOME/history.db\n\
+rm -f $DAGSTER_HOME/schedules.db\n\
+rm -f $DAGSTER_HOME/runs.db\n\
+\n\
+# Set Python path\n\
 export PYTHONPATH=/app:$PYTHONPATH\n\
-# Verify Python can find our modules\n\
-python3 -c "import src.core.pipeline; print(\\"Pipeline module loaded successfully\\")" || exit 1\n\
-exec dagster dev -h 0.0.0.0 -p 3000 -w $DAGSTER_HOME/workspace.yaml\n'\
+\n\
+# Start the Dagster daemon in the background\n\
+dagster-daemon run -m src.core &\n\
+\n\
+# Start the gRPC server in the background\n\
+dagster api grpc -m src.core --host 0.0.0.0 --port 4000 &\n\
+\n\
+# Start the webserver in the foreground\n\
+dagster-webserver --host 0.0.0.0 --port 3000 -m src.core\n'\
 > /start.sh && chmod +x /start.sh
 
 # Start using the script

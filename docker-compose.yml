@@ -9,9 +9,9 @@ services:
     volumes:
       - .:/app
       - dagster_data:/data
-      - dagster_home:/data/dagster_home  # Use named volume for dagster_home
-      - dagster_tmp:/tmp/dagster  # Use named volume for temp directory
-      - model_storage:/data/models  # Add volume for model storage
+      - dagster_home:/data/dagster_home
+      - dagster_tmp:/tmp/dagster
+      - model_storage:/data/models
     environment:
       - DAGSTER_HOME=/data/dagster_home
       - PYTHONPATH=/app
@@ -20,14 +20,14 @@ services:
       - OLLAMA_HOST=http://ollama
       - OLLAMA_PORT=11434
       - MODELS_DIR=/data/models
-    command: |
-      bash -c "
-        mkdir -p /data/dagster_home &&
-        mkdir -p /data/models/cache &&
-        cp /app/src/config/workspace.yaml /data/dagster_home/ &&
-        cp /app/src/config/dagster.yaml /data/dagster_home/ &&
-        dagster dev -h 0.0.0.0 -p 3000 --grpc-host 0.0.0.0 --grpc-port 4000
-      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app_network
 
   streamlit:
     build:
@@ -38,9 +38,9 @@ services:
     volumes:
       - .:/app
       - dagster_data:/data
-      - dagster_home:/data/dagster_home  # Share dagster_home volume
-      - dagster_tmp:/tmp/dagster  # Use same named volume for temp directory
-      - model_storage:/data/models  # Share model storage volume
+      - dagster_home:/data/dagster_home
+      - dagster_tmp:/tmp/dagster
+      - model_storage:/data/models
     environment:
       - DAGSTER_HOME=/data/dagster_home
       - DAGSTER_HOST=dagster
@@ -52,12 +52,16 @@ services:
       - OLLAMA_PORT=11434
       - MODELS_DIR=/data/models
     depends_on:
-      - dagster
-      - ollama
+      dagster:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - app_network
 
   ollama:
     image: ollama/ollama:latest
-    platform: linux/arm64  # Specify ARM64 platform for M1/M2 Macs
+    platform: linux/arm64
     ports:
       - "11434:11434"
     volumes:
@@ -70,12 +74,14 @@ services:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_ORIGINS=*
       - OLLAMA_MODELS=/root/.ollama/models
-      - OLLAMA_USE_MLX=true  # Enable MLX acceleration
+      - OLLAMA_USE_MLX=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - app_network
 
   test:
     build:
@@ -92,10 +98,16 @@ services:
         condition: service_healthy
     profiles:
       - test
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
 
 volumes:
   dagster_data:
-  dagster_home:  # Define the named volume for dagster_home
-  dagster_tmp:  # Define the named volume for temp directory
-  model_storage:  # Define the volume for model storage
+  dagster_home:
+  dagster_tmp:
+  model_storage:
   ollama_models: 

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   dagster:
     build:
@@ -59,6 +57,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    platform: linux/arm64  # Specify ARM64 platform for M1/M2 Macs
     ports:
       - "11434:11434"
     volumes:
@@ -67,11 +66,11 @@ services:
       resources:
         limits:
           memory: 16G
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_MODELS=/root/.ollama/models
+      - OLLAMA_USE_MLX=true  # Enable MLX acceleration
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s

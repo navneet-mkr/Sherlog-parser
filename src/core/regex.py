@@ -1,17 +1,17 @@
-"""Module for generating regex patterns using LLM."""
+"""Module for generating regex patterns using Ollama."""
 
 import logging
 import re
 from typing import List, Optional
 import json
 from pathlib import Path
+import httpx
 
 from src.models import (
     RegexGenerationPrompt,
     RegexGenerationResponse,
     Settings
 )
-from src.core.llm import LLMManager
 from src.core.constants import (
     REGEX_SYSTEM_PROMPT,
     PATTERN_CHOICE_SYSTEM_PROMPT,
@@ -24,7 +24,7 @@ from src.core.constants import (
 logger = logging.getLogger(__name__)
 
 class RegexGenerator:
-    """Handles generation of regex patterns using LLM."""
+    """Handles generation of regex patterns using Ollama."""
     
     def __init__(self, settings: Optional[Settings] = None):
         """Initialize the regex generator.
@@ -33,9 +33,51 @@ class RegexGenerator:
             settings: Optional Settings instance for configuration
         """
         self.settings = settings or Settings()
-        self.llm = LLMManager(settings=self.settings)
+        self.base_url = f"http://{self.settings.ollama.host}:{self.settings.ollama.port}"
         
-    def generate_regex_for_cluster(
+    async def _generate_completion(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = DEFAULT_TEMPERATURE
+    ) -> str:
+        """Generate a completion using Ollama.
+        
+        Args:
+            prompt: The prompt to send
+            system_prompt: Optional system prompt
+            temperature: Temperature for generation
+            
+        Returns:
+            Generated text
+            
+        Raises:
+            httpx.HTTPError: If the API request fails
+        """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.settings.ollama.model_name,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": self.settings.ollama.num_predict,
+                        "top_k": self.settings.ollama.top_k,
+                        "top_p": self.settings.ollama.top_p
+                    }
+                }
+            )
+            response.raise_for_status()
+            return response.json()["message"]["content"]
+    
+    async def generate_regex_for_cluster(
         self,
         sample_lines: List[str],
         max_retries: int = MAX_RETRIES,
@@ -65,17 +107,22 @@ class RegexGenerator:
         
         for attempt in range(max_retries):
             try:
-                # Generate pattern using LLM
-                result = self.llm.generate_structured_completion(
+                # Generate pattern using Ollama
+                completion = await self._generate_completion(
                     prompt=prompt.format_prompt(),
                     system_prompt=REGEX_SYSTEM_PROMPT,
-                    temperature=DEFAULT_TEMPERATURE if attempt == 0 else RETRY_TEMPERATURE,
-                    response_model=RegexGenerationResponse
+                    temperature=DEFAULT_TEMPERATURE if attempt == 0 else RETRY_TEMPERATURE
                 )
                 
-                if result and self._validate_pattern(result.pattern, sample_lines):
-                    logger.info(f"Successfully generated pattern with fields: {list(result.field_descriptions.keys())}")
-                    return result.pattern
+                try:
+                    # Try to parse the response as JSON
+                    result = RegexGenerationResponse.model_validate_json(completion)
+                    if result and self._validate_pattern(result.pattern, sample_lines):
+                        logger.info(f"Successfully generated pattern with fields: {list(result.field_descriptions.keys())}")
+                        return result.pattern
+                except Exception as e:
+                    logger.error(f"Error parsing response: {str(e)}")
+                    continue
                     
             except Exception as e:
                 logger.error(f"Error generating regex (attempt {attempt + 1}): {str(e)}")
@@ -118,13 +165,13 @@ class RegexGenerator:
             logger.warning(f"Invalid regex pattern: {str(e)}")
             raise
     
-    def verify_or_modify_pattern(
+    async def verify_or_modify_pattern(
         self,
         log_line: str,
         sample_lines: List[str],
         existing_pattern: str
     ) -> Optional[str]:
-        """Ask LLM to verify or modify a pattern for a new log line.
+        """Ask Ollama to verify or modify a pattern for a new log line.
         
         Args:
             log_line: Current log line to parse
@@ -162,12 +209,13 @@ or
 REJECT"""
         
         try:
-            result = self.llm.generate_completion(
+            result = await self._generate_completion(
                 prompt=prompt,
                 system_prompt=PATTERN_CHOICE_SYSTEM_PROMPT,
                 temperature=DEFAULT_TEMPERATURE
-            ).strip()
+            )
             
+            result = result.strip()
             if result.startswith("KEEP:"):
                 return existing_pattern
             elif result.startswith("MODIFY:"):

@@ -36,10 +36,10 @@ RUN pip install --no-cache-dir \
     pydantic \
     pydantic-settings \
     torch \
-    llama-cpp-python \
     psutil \
     requests \
-    tqdm
+    tqdm \
+    dagster-webserver>=1.5.13
 
 # Create a startup script
 RUN echo '#!/bin/bash\n\

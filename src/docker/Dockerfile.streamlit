@@ -17,7 +17,6 @@ RUN pip install -e .
 # Install additional dependencies for model handling
 RUN pip install --no-cache-dir \
     torch \
-    llama-cpp-python \
     psutil \
     requests \
     tqdm

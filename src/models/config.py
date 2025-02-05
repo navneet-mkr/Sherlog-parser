@@ -14,6 +14,16 @@ class ModelInfo(BaseModel):
     context_length: int = Field(default=4096)
     parameters: Dict[str, Union[str, int, float]] = Field(default_factory=dict)
 
+class LLMSettings(BaseModel):
+    """Settings for LLM configuration."""
+    model_name: str = Field("mistral", env='LLM_MODEL_NAME')
+    max_tokens: int = Field(2048, env='LLM_MAX_TOKENS')
+    temperature: float = Field(0.1, env='LLM_TEMPERATURE')
+    top_k: int = Field(40, env='LLM_TOP_K')
+    top_p: float = Field(0.9, env='LLM_TOP_P')
+    repeat_penalty: float = Field(1.1, env='LLM_REPEAT_PENALTY')
+    context_length: int = Field(4096, env='LLM_CONTEXT_LENGTH')
+
 class LLMConfig(BaseModel):
     """Configuration for Ollama LLM usage."""
     model_id: str
@@ -79,10 +89,15 @@ class OllamaSettings(BaseModel):
     host: str = Field("http://ollama", env='OLLAMA_HOST')
     port: int = Field(11434, env='OLLAMA_PORT')
     timeout: int = Field(120, env='OLLAMA_TIMEOUT')
+    model_name: str = Field("mistral", env='OLLAMA_MODEL_NAME')
+    num_predict: int = Field(2048, env='OLLAMA_NUM_PREDICT')
+    top_k: int = Field(40, env='OLLAMA_TOP_K')
+    top_p: float = Field(0.9, env='OLLAMA_TOP_P')
 
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    llm: LLMSettings = Field(default_factory=LLMSettings)
     embedding_model: str = Field("all-MiniLM-L6-v2", env='EMBEDDING_MODEL')
     chunk_size: int = Field(10000, env='CHUNK_SIZE')
     n_clusters: int = Field(20, env='N_CLUSTERS')
@@ -95,7 +110,7 @@ class Settings(BaseSettings):
     def get_llm_kwargs(self) -> dict:
         """Get kwargs for LLM provider initialization."""
         return {
-            "model_path": self.llm.model_path,
+            "model_name": self.llm.model_name,
             "max_tokens": self.llm.max_tokens,
             "context_length": self.llm.context_length
         } 

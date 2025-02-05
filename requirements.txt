@@ -51,4 +51,5 @@ dagster-cloud>=1.5.13
 huggingface-hub>=0.19.4
 torch>=2.1.2
 requests>=2.31.0
-tqdm>=4.66.1 
+tqdm>=4.66.1
+docker>=6.1.3 

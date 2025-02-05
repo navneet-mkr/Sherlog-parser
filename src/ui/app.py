@@ -21,6 +21,9 @@ from src.models.config import (
     OllamaSettings
 )
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import docker
+from docker.errors import NotFound, APIError
+from datetime import datetime
 
 # Type definitions
 class ModelInfo(TypedDict):
@@ -613,6 +616,110 @@ def check_ollama_status() -> Dict[str, Any]:
             "connection_error": True
         }
 
+def get_container_status() -> Dict[str, Dict[str, Any]]:
+    """Get status of all required containers.
+    
+    Returns:
+        Dict with container statuses and health information
+    """
+    try:
+        client = docker.from_env()
+        services = {
+            "ollama": {"name": "Ollama LLM Service", "icon": "🤖"},
+            "dagster": {"name": "Dagster Pipeline", "icon": "🔄"},
+            "streamlit": {"name": "Web Interface", "icon": "🌐"}
+        }
+        
+        status = {}
+        for service_id, info in services.items():
+            try:
+                container = client.containers.get(f"log-parse-ai-{service_id}-1")
+                health = container.attrs.get('State', {}).get('Health', {}).get('Status', 'unknown')
+                status[service_id] = {
+                    "name": info["name"],
+                    "icon": info["icon"],
+                    "status": container.status,
+                    "health": health,
+                    "running": container.status == "running",
+                    "container_id": container.id[:12]
+                }
+            except NotFound:
+                status[service_id] = {
+                    "name": info["name"],
+                    "icon": info["icon"],
+                    "status": "not found",
+                    "health": "unknown",
+                    "running": False,
+                    "container_id": None
+                }
+        return status
+    except Exception as e:
+        logger.error(f"Failed to get container status: {str(e)}")
+        return {}
+
+def restart_container(container_id: str) -> Tuple[bool, str]:
+    """Restart a specific container.
+    
+    Args:
+        container_id: ID of the container to restart
+        
+    Returns:
+        Tuple[bool, str]: (success, message)
+    """
+    try:
+        client = docker.from_env()
+        container = client.containers.get(f"log-parse-ai-{container_id}-1")
+        container.restart()
+        return True, f"Successfully restarted {container_id}"
+    except Exception as e:
+        logger.error(f"Failed to restart container {container_id}: {str(e)}")
+        return False, f"Failed to restart {container_id}: {str(e)}"
+
+def show_system_status():
+    """Display system status dashboard in the sidebar."""
+    st.sidebar.markdown("---")
+    st.sidebar.header("🖥️ System Status")
+    
+    container_status = get_container_status()
+    
+    if not container_status:
+        st.sidebar.error("❌ Failed to get system status")
+        return
+    
+    # Show status for each service
+    for service_id, status in container_status.items():
+        st.sidebar.markdown(f"### {status['icon']} {status['name']}")
+        
+        # Status indicator
+        if status['running']:
+            if status['health'] == 'healthy':
+                st.sidebar.success("✅ Running")
+            elif status['health'] == 'unhealthy':
+                st.sidebar.error("⚠️ Unhealthy")
+            else:
+                st.sidebar.warning("⚠️ Status Unknown")
+        else:
+            st.sidebar.error("❌ Not Running")
+        
+        # Show container details in expander
+        with st.sidebar.expander("Details"):
+            st.markdown(f"""
+            - **Status**: {status['status']}
+            - **Health**: {status['health']}
+            - **Container ID**: {status['container_id'] or 'N/A'}
+            """)
+        
+        # Add restart button if not running or unhealthy
+        if not status['running'] or status['health'] == 'unhealthy':
+            if st.sidebar.button(f"🔄 Restart {status['name']}", key=f"restart_{service_id}"):
+                success, message = restart_container(service_id)
+                if success:
+                    st.sidebar.success(f"✅ {message}")
+                    time.sleep(2)  # Give some time for the container to start
+                    st.rerun()
+                else:
+                    st.sidebar.error(f"❌ {message}")
+
 # Set page config
 st.set_page_config(
     page_title="Sherlog Parser",
@@ -625,10 +732,25 @@ try:
     st.title("🔍 Sherlog Parser")
     st.write("Upload your log file and analyze patterns using our advanced ML pipeline.")
 
+    # Show system status in sidebar
+    show_system_status()
+
     # Create placeholders for progress display
     progress_text = st.empty()
     progress_bar = st.empty()
     status_text = st.empty()
+
+    # Check container health before proceeding
+    container_status = get_container_status()
+    if not container_status.get("ollama", {}).get("running", False):
+        st.error("❌ Ollama service is not running")
+        st.info("Please check the System Status panel in the sidebar and restart the service if needed.")
+        st.stop()
+    
+    if not container_status.get("dagster", {}).get("running", False):
+        st.error("❌ Dagster service is not running")
+        st.info("Please check the System Status panel in the sidebar and restart the service if needed.")
+        st.stop()
 
     # Check Ollama status before proceeding with main UI
     ollama_status = check_ollama_status()

@@ -131,6 +131,47 @@ fi
 # Show initialization progress
 show_initialization
 
+# Function to get condensed error logs
+get_container_errors() {
+    local service="$1"
+    local lines=10  # Number of error lines to show
+    local errors
+    
+    # Get recent logs with errors
+    errors=$(docker compose logs --tail=50 $service 2>&1 | grep -i -E "error|exception|fatal|failed|traceback" | tail -n $lines)
+    
+    if [ ! -z "$errors" ]; then
+        echo "$errors"
+        return 0
+    fi
+    return 1
+}
+
+# Function to show debugging guidance
+show_debug_guidance() {
+    local service="$1"
+    local error_type="$2"
+    
+    echo -e "\n${YELLOW}Debugging Guidance${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "${BLUE}Issue detected in $service service${NC}"
+    echo
+    echo "To investigate:"
+    echo "1. View full logs:"
+    echo "   docker compose logs $service"
+    echo
+    echo "2. Access container shell:"
+    echo "   docker compose exec $service bash"
+    echo
+    echo "3. Check container status:"
+    echo "   docker compose ps $service"
+    echo
+    echo -e "${YELLOW}Need help?${NC}"
+    echo "- Report this issue: https://github.com/yourusername/log-parse-ai/issues/new"
+    echo "- Include the error message and your configuration"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 # Function to check if a URL is accessible with progress
 check_url() {
     local url="$1"
@@ -152,7 +193,7 @@ check_url() {
     return 1
 }
 
-# Function to check if service is ready with progress
+# Enhanced service check with error reporting
 check_service() {
     local service="$1"
     local url="$2"
@@ -175,26 +216,114 @@ check_service() {
                 return 0
             fi
         fi
+        
+        # Check for errors after a few attempts
+        if [ $attempt -eq 5 ]; then
+            echo -e "\n${YELLOW}Checking for errors...${NC}"
+            if errors=$(get_container_errors $service); then
+                echo -e "\n${RED}Found errors in $service:${NC}"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "$errors"
+                show_debug_guidance $service "startup"
+                
+                # For non-Streamlit services, exit on error
+                if [ "$service" != "Streamlit" ]; then
+                    return 1
+                fi
+            fi
+        fi
+        
         sleep 2
         attempt=$((attempt + 1))
     done
     
     if [ $attempt -gt $max_attempts ]; then
-        echo -e "\n${YELLOW}⚠️  $service health check timed out, but service might still be starting...${NC}"
+        echo -e "\n${YELLOW}⚠️  $service health check timed out${NC}"
+        
+        # Check for errors one last time
+        if errors=$(get_container_errors $service); then
+            echo -e "\n${RED}Found errors in $service:${NC}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "$errors"
+            show_debug_guidance $service "timeout"
+        fi
+        
         if [ "$service" = "Streamlit" ]; then
             return 0
         fi
-    else
-        echo -e "\n${RED}✗ $service failed to start${NC}"
+        return 1
     fi
+    
     return 1
 }
 
-# Function to cleanup on exit
+# Enhanced cleanup with error checking
 cleanup() {
-    echo -e "\n\n${YELLOW}Shutting down services...${NC}"
-    docker compose down > /dev/null 2>&1
-    echo -e "${GREEN}✓ All services stopped${NC}"
+    echo -e "\n\n${YELLOW}Shutting Down Services${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Check for errors before shutdown
+    local services=$(docker compose ps --services --filter "status=running")
+    
+    if [ ! -z "$services" ]; then
+        echo -e "${BLUE}Checking for errors before shutdown...${NC}"
+        for service in $services; do
+            if errors=$(get_container_errors $service); then
+                echo -e "\n${YELLOW}Recent errors in $service:${NC}"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "$errors"
+                echo
+            fi
+        done
+    fi
+    
+    # Proceed with shutdown
+    local total_services=$(echo "$services" | wc -l)
+    local current=0
+    
+    if [ -z "$services" ]; then
+        echo -e "${YELLOW}No running services found${NC}"
+    else
+        for service in $services; do
+            current=$((current + 1))
+            show_progress $current $total_services
+            echo -e "\n${BLUE}Stopping $service...${NC}"
+            
+            # Stop individual service
+            if docker compose stop $service > /dev/null 2>&1; then
+                echo -e "${GREEN}✓ Stopped $service${NC}"
+            else
+                echo -e "${RED}✗ Failed to stop $service${NC}"
+                # Try to get any error information
+                if errors=$(get_container_errors $service); then
+                    echo -e "Last errors from $service:"
+                    echo "$errors"
+                fi
+            fi
+        done
+    fi
+    
+    echo -e "\n${BLUE}Cleaning up resources...${NC}"
+    
+    # Remove containers
+    show_status "Removing containers"
+    if docker compose rm -f > /dev/null 2>&1; then
+        echo -e "\r${GREEN}✓ Removed containers${NC}"
+    else
+        echo -e "\r${RED}✗ Failed to remove containers${NC}"
+    fi
+    
+    # Remove networks
+    show_status "Removing networks"
+    if docker network prune -f > /dev/null 2>&1; then
+        echo -e "\r${GREEN}✓ Removed networks${NC}"
+    else
+        echo -e "\r${RED}✗ Failed to remove networks${NC}"
+    fi
+    
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "${GREEN}✨ Cleanup completed${NC}"
+    echo -e "${BLUE}Thank you for using Sherlog Parser!${NC}"
     exit 0
 }
 
@@ -211,15 +340,48 @@ needs_rebuild() {
     return 1
 }
 
+# Function to show build progress
+show_build_progress() {
+    local service="$1"
+    local build_output
+    
+    echo -e "\n${BLUE}Building $service container${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Run docker compose build with progress output
+    build_output=$(docker compose build $service 2>&1)
+    
+    # Process the build output line by line
+    while IFS= read -r line; do
+        if [[ $line == *"Step "* ]] && [[ $line == *"/"* ]]; then
+            # Extract step number and total steps
+            step=$(echo $line | grep -o 'Step [0-9]*/[0-9]*' | cut -d'/' -f1 | cut -d' ' -f2)
+            total=$(echo $line | grep -o 'Step [0-9]*/[0-9]*' | cut -d'/' -f2)
+            show_progress $step $total
+            
+            # Extract and show the actual command being run
+            command=$(echo $line | cut -d' ' -f4-)
+            echo -e "\n${YELLOW}▶ $command${NC}"
+        elif [[ $line == *"-->"* ]]; then
+            # Show layer caching information
+            echo -e "${GREEN}✓${NC} Using cache"
+        elif [[ $line == "Successfully tagged"* ]]; then
+            echo -e "\n${GREEN}✓ Build completed successfully${NC}"
+        elif [[ $line == *"error"* ]] || [[ $line == *"Error"* ]]; then
+            echo -e "\n${RED}✗ Error: $line${NC}"
+        fi
+    done <<< "$build_output"
+    
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 # Start services with progress
 start_services() {
     echo -e "\n${BLUE}Starting Services${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     if needs_rebuild "streamlit"; then
-        show_status "Building Streamlit container"
-        docker compose build streamlit > /dev/null 2>&1
-        echo -e "\r${GREEN}✓ Built Streamlit container${NC}"
+        show_build_progress "streamlit"
     fi
     
     show_status "Starting containers"

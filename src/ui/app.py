@@ -800,6 +800,26 @@ try:
     st.title("🔍 Sherlog Parser")
     st.write("Upload your log file and analyze patterns using our advanced ML pipeline.")
 
+    # Add auto-refresh for status checks
+    st.markdown("""
+        <style>
+            div[data-testid="stStatusWidget"] {
+                visibility: hidden;
+                height: 0px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    if 'last_check_time' not in st.session_state:
+        st.session_state.last_check_time = time.time()
+    
+    current_time = time.time()
+    time_since_last_check = current_time - st.session_state.last_check_time
+    
+    # Update last check time
+    if time_since_last_check >= 10:  # Check every 10 seconds
+        st.session_state.last_check_time = current_time
+        st.rerun()
 
     # Create placeholders for progress display
     progress_text = st.empty()
@@ -811,8 +831,14 @@ try:
     
     if not ollama_status["is_ready"]:
         # Create a clean loading screen in main area
-        st.markdown("### 🚀 Initializing System")
-        st.info(ollama_status["message"])
+        status_container = st.container()
+        with status_container:
+            st.markdown("### 🚀 Initializing System")
+            st.info(ollama_status["message"])
+            
+            # Show last check time
+            st.caption(f"Last status check: {time.strftime('%H:%M:%S')}")
+            st.caption("Status is checked every 10 seconds automatically.")
         
         if ollama_status.get("connection_error", False):
             # Add reconnection information
@@ -825,7 +851,8 @@ try:
             - Verify your network connection
             """)
             # Add a manual retry button
-            if st.button("🔄 Retry Connection"):
+            if st.button("🔄 Retry Now"):
+                st.session_state.last_check_time = 0  # Force immediate check
                 st.rerun()
         elif ollama_status.get("needs_model", False):
             # Show model selection screen
@@ -856,19 +883,14 @@ try:
             st.markdown("""
             The system is currently:
             1. Starting the Ollama service
-            2. Downloading the Mistral model:
-               - A powerful language model for log analysis
-               - Optimized for pattern recognition
-               - ~4GB download size
+            2. Checking for available models
             3. Preparing the analysis pipeline
             
-            This may take a few minutes on first startup. The model will be cached for future use.
+            The status is automatically checked every 10 seconds.
+            You can also click 'Retry Now' to check immediately.
             """)
-            
-        # Rerun the app every few seconds to check status
-        time.sleep(2)  # Reduced sleep time for more responsive updates
-        st.rerun()
-        st.stop()
+        
+        st.stop()  # Stop here to prevent the rest of the UI from loading
 
     # Clear progress display elements when done
     progress_text.empty()

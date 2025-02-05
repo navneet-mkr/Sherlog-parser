@@ -681,65 +681,27 @@ def check_ollama_status() -> Dict[str, Any]:
         models_data = response.json().get("models", [])
         available_models = [m["name"] for m in models_data if not m["name"].endswith(":latest")]
         
-        # Check if mistral is available
-        if "mistral" in available_models:
+        # If we have any models, we're ready
+        if available_models:
             return {
                 "is_ready": True,
-                "message": "Ollama is ready with mistral model!",
+                "message": "Ollama is ready!",
                 "models_available": available_models,
                 "is_downloading": False,
                 "download_status": {},
                 "connection_error": False
             }
         
-        # Try to pull mistral if not available
-        try:
-            success, progress = pull_model_with_progress("mistral", st)
-            
-            if success:
-                return {
-                    "is_ready": True,
-                    "message": "Mistral model download complete!",
-                    "models_available": available_models + ["mistral"],
-                    "is_downloading": False,
-                    "download_status": {},
-                    "connection_error": False
-                }
-            elif progress:
-                return {
-                    "is_ready": False,
-                    "message": "Downloading mistral model...",
-                    "models_available": available_models,
-                    "is_downloading": True,
-                    "download_status": {
-                        "current_model": "mistral",
-                        "progress": progress.get("progress", 0),
-                        "total": progress.get("total", 100),
-                        "status": progress.get("status", "downloading")
-                    },
-                    "connection_error": False
-                }
-            
-            return {
-                "is_ready": False,
-                "message": "Initiating mistral model download...",
-                "models_available": available_models,
-                "is_downloading": True,
-                "download_status": {},
-                "connection_error": False
-            }
-                
-        except Exception as e:
-            logger.error(f"Failed to pull model: {str(e)}")
-            show_connection_error(f"Failed to download model: {str(e)}")
-            return {
-                "is_ready": False,
-                "message": "Error downloading model",
-                "models_available": available_models,
-                "is_downloading": False,
-                "download_status": {},
-                "connection_error": True
-            }
+        # No models available - return status indicating need for model selection
+        return {
+            "is_ready": False,
+            "message": "No models available. Please select a model to download.",
+            "models_available": [],
+            "is_downloading": False,
+            "download_status": {},
+            "connection_error": False,
+            "needs_model": True
+        }
             
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to connect to Ollama: {str(e)}")
@@ -752,6 +714,79 @@ def check_ollama_status() -> Dict[str, Any]:
             "download_status": {},
             "connection_error": True
         }
+
+def show_model_selection_screen():
+    """Show the model selection screen when no models are available."""
+    st.markdown("### 🤖 Select a Model to Download")
+    
+    # Define recommended models with descriptions
+    recommended_models = {
+        "mistral": {
+            "name": "Mistral",
+            "description": "Powerful open-source model optimized for log analysis",
+            "size": "~4GB",
+            "recommended": True
+        },
+        "llama2": {
+            "name": "Llama 2",
+            "description": "Meta's latest model with strong general capabilities",
+            "size": "~4GB",
+            "recommended": False
+        },
+        "codellama": {
+            "name": "CodeLlama",
+            "description": "Specialized for code and technical content",
+            "size": "~4GB",
+            "recommended": False
+        },
+        "neural-chat": {
+            "name": "Neural Chat",
+            "description": "Optimized for conversation and analysis",
+            "size": "~4GB",
+            "recommended": False
+        }
+    }
+    
+    st.markdown("""
+    To get started, you'll need to download a model. Here are some recommended options:
+    """)
+    
+    # Create columns for model cards
+    cols = st.columns(2)
+    selected_model = None
+    
+    for idx, (model_id, info) in enumerate(recommended_models.items()):
+        with cols[idx % 2]:
+            st.markdown(f"""
+            <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                <h4>{info['name']} {'🌟' if info['recommended'] else ''}</h4>
+                <p>{info['description']}</p>
+                <p><small>Size: {info['size']}</small></p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button(f"Download {info['name']}", key=f"download_{model_id}"):
+                selected_model = model_id
+    
+    # Custom model input
+    st.markdown("---")
+    st.markdown("#### 🔍 Download Custom Model")
+    custom_model = st.text_input(
+        "Enter model name",
+        help="Enter the name of any other Ollama model you'd like to use"
+    )
+    if st.button("Download Custom Model") and custom_model:
+        selected_model = custom_model
+    
+    # Show download progress if a model is selected
+    if selected_model:
+        st.markdown(f"### Downloading {selected_model}")
+        success, progress = pull_model_with_progress(selected_model, st)
+        if success:
+            st.success(f"✅ Successfully downloaded {selected_model}")
+            time.sleep(1)  # Give user a moment to see the success message
+            st.rerun()  # Refresh the page to show the main UI
+        else:
+            st.error(f"Failed to download {selected_model}")
 
 # Set page config
 st.set_page_config(
@@ -792,12 +827,15 @@ try:
             # Add a manual retry button
             if st.button("🔄 Retry Connection"):
                 st.rerun()
+        elif ollama_status.get("needs_model", False):
+            # Show model selection screen
+            show_model_selection_screen()
         elif ollama_status["is_downloading"]:
             st.markdown("#### Download Progress")
             download_status = ollama_status["download_status"]
             
             # Show current model being downloaded
-            progress_text.text("Downloading: mistral")
+            progress_text.text(f"Downloading: {download_status.get('current_model', 'model')}")
             
             # Calculate and show progress
             progress = download_status.get("progress", 0)

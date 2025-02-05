@@ -2,6 +2,7 @@ import os
 import logging
 import streamlit as st
 import requests
+import time
 from pathlib import Path
 from dagster import DagsterInstance, JobDefinition
 from src.core import log_processing_job
@@ -9,7 +10,7 @@ from langchain_community.llms import Ollama
 from langchain_community.chat_models import ChatOpenAI
 from langchain.schema.language_model import BaseLanguageModel
 from huggingface_hub import hf_hub_download
-from typing import Optional, Dict, TypedDict, Literal, Union, Any, List
+from typing import Optional, Dict, TypedDict, Literal, Union, Any, List, Set
 from src.models.config import (
     ModelInfo,
     LLMConfig,
@@ -408,6 +409,76 @@ def manage_models():
                     else:
                         st.error(f"❌ Failed to delete {model_id}")
 
+def check_ollama_status() -> Dict[str, Any]:
+    """Check Ollama service status and model download progress.
+    
+    Returns:
+        Dict with status information including:
+        - is_ready: bool
+        - message: str
+        - models_available: List[str]
+        - is_downloading: bool
+        - download_status: str
+    """
+    try:
+        # Check if Ollama service is accessible
+        response = requests.get(f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags")
+        if response.status_code != 200:
+            return {
+                "is_ready": False,
+                "message": "Waiting for Ollama service to start...",
+                "models_available": [],
+                "is_downloading": False,
+                "download_status": ""
+            }
+        
+        models_data = response.json().get("models", [])
+        available_models = [m["name"] for m in models_data if not m["name"].endswith(":latest")]
+        
+        # Expected models from init script
+        expected_models = {"mistral", "llama2", "codellama"}
+        missing_models = expected_models - set(available_models)
+        
+        if not missing_models:
+            return {
+                "is_ready": True,
+                "message": "Ollama is ready with all required models!",
+                "models_available": available_models,
+                "is_downloading": False,
+                "download_status": ""
+            }
+        
+        # Check if models are being downloaded
+        try:
+            status_response = requests.get(f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/status")
+            if status_response.status_code == 200 and status_response.json().get("status") == "downloading":
+                return {
+                    "is_ready": False,
+                    "message": "Downloading required models...",
+                    "models_available": available_models,
+                    "is_downloading": True,
+                    "download_status": f"Missing models: {', '.join(missing_models)}"
+                }
+        except:
+            pass
+            
+        return {
+            "is_ready": False,
+            "message": "Waiting for required models to be downloaded...",
+            "models_available": available_models,
+            "is_downloading": False,
+            "download_status": f"Missing models: {', '.join(missing_models)}"
+        }
+            
+    except requests.exceptions.RequestException:
+        return {
+            "is_ready": False,
+            "message": "Waiting for Ollama service to start...",
+            "models_available": [],
+            "is_downloading": False,
+            "download_status": ""
+        }
+
 # Set page config
 st.set_page_config(
     page_title="Sherlog Parser",
@@ -420,11 +491,56 @@ try:
     st.title("🔍 Sherlog Parser")
     st.write("Upload your log file and analyze patterns using our advanced ML pipeline.")
 
+    # Check Ollama status before proceeding
+    ollama_status = check_ollama_status()
+    
+    if not ollama_status["is_ready"]:
+        # Create a clean loading screen
+        st.markdown("### 🚀 Initializing System")
+        st.info(ollama_status["message"])
+        
+        if ollama_status["is_downloading"]:
+            st.markdown("#### Download Progress")
+            st.text(ollama_status["download_status"])
+        
+        if ollama_status["models_available"]:
+            st.markdown("#### Currently Available Models")
+            st.text(", ".join(ollama_status["models_available"]))
+            
+        # Add some helpful information while waiting
+        with st.expander("ℹ️ What's happening?"):
+            st.markdown("""
+            The system is currently:
+            1. Starting the Ollama service
+            2. Downloading required AI models:
+               - Mistral (General purpose)
+               - Llama2 (Advanced reasoning)
+               - CodeLlama (Code analysis)
+            3. Preparing the analysis pipeline
+            
+            This may take a few minutes on first startup. The models will be cached for future use.
+            """)
+            
+        # Rerun the app every few seconds to check status
+        time.sleep(5)
+        st.experimental_rerun()
+        st.stop()
+
     # Add model management to sidebar
     manage_models()
     
     # Model selection
     model_config = handle_model_selection()
+    
+    if not model_config:
+        st.error("❌ Application cannot start without available models.")
+        st.info("Please ensure:")
+        st.markdown("""
+        - Ollama service is running
+        - At least one model is loaded in Ollama
+        - The application has network connectivity to Ollama
+        """)
+        st.stop()  # Stop the app here to prevent further errors
     
     # Only show file upload if model is ready
     if (model_config["model_type"] == "local" and model_config["model_path"]) or \

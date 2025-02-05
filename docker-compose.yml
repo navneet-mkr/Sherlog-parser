@@ -12,6 +12,7 @@ services:
       - dagster_home:/data/dagster_home
       - dagster_tmp:/tmp/dagster
       - model_storage:/data/models
+      - ./src/docker/init-dagster.sh:/init-dagster.sh
     environment:
       - DAGSTER_HOME=/data/dagster_home
       - PYTHONPATH=/app
@@ -26,6 +27,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        chmod +x /init-dagster.sh
+        /init-dagster.sh
     restart: unless-stopped
     networks:
       - app_network
@@ -74,6 +80,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
+      - ./src/docker/init-ollama.sh:/init-ollama.sh
     deploy:
       resources:
         limits:
@@ -89,6 +96,13 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        chmod +x /init-ollama.sh
+        ollama serve &
+        sleep 5
+        /init-ollama.sh
     restart: unless-stopped
     networks:
       - app_network

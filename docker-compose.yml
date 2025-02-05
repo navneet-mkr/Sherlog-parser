@@ -22,16 +22,19 @@ services:
       - OLLAMA_PORT=11434
       - MODELS_DIR=/data/models
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 10s
-      timeout: 5s
+      test: 
+        - CMD-SHELL
+        - 'test -f /data/dagster_home/dagster.yaml && curl -f http://localhost:3000 || exit 1'
+      interval: 30s
+      timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        rm -f /data/dagster_home/dagster.yaml
         chmod +x /init-dagster.sh
-        /init-dagster.sh
+        exec /init-dagster.sh
     restart: unless-stopped
     networks:
       - app_network

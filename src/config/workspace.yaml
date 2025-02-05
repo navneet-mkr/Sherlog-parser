@@ -1,6 +1,4 @@
 load_from:
-  - python_package:
-      package_name: src.core
-      location_name: log_parser
-      executable_path: python3
+  - python_module:
+      module_name: src.core
       working_directory: /app 

@@ -11,7 +11,7 @@ from langchain_community.llms import Ollama
 from langchain_community.chat_models import ChatOpenAI
 from langchain.schema.language_model import BaseLanguageModel
 from huggingface_hub import hf_hub_download
-from typing import Optional, Dict, TypedDict, Literal, Union, Any, List, Set
+from typing import Optional, Dict, TypedDict, Literal, Union, Any, List, Set, Tuple
 from src.models.config import (
     ModelInfo,
     LLMConfig,
@@ -20,6 +20,7 @@ from src.models.config import (
     AVAILABLE_MODELS,
     OllamaSettings
 )
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Type definitions
 class ModelInfo(TypedDict):
@@ -57,6 +58,48 @@ OLLAMA_SETTINGS = OllamaSettings(
     host=os.getenv("OLLAMA_HOST", "http://localhost"),
     port=int(os.getenv("OLLAMA_PORT", "11434"))
 )
+
+class OllamaConnectionError(Exception):
+    """Custom exception for Ollama connection issues."""
+    pass
+
+@retry(
+    retry=retry_if_exception_type(requests.exceptions.RequestException),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    stop=stop_after_attempt(5)
+)
+def check_ollama_connection() -> bool:
+    """Check if Ollama service is accessible with retry logic.
+    
+    Returns:
+        bool: True if connection successful, False otherwise
+        
+    Raises:
+        OllamaConnectionError: If connection fails after retries
+    """
+    try:
+        response = requests.get(
+            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags",
+            timeout=5
+        )
+        return response.status_code == 200
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Failed to connect to Ollama: {str(e)}")
+        raise OllamaConnectionError(f"Failed to connect to Ollama: {str(e)}")
+
+def show_connection_error(error_msg: str, container=st):
+    """Display a user-friendly connection error message."""
+    container.error("🔌 Connection Issue")
+    container.markdown(f"**Error**: {error_msg}")
+    container.markdown("""
+    **Troubleshooting Steps**:
+    1. Check if the Ollama service is running
+    2. Verify network connectivity
+    3. Ensure Ollama is accessible at the configured host/port
+    4. Check system resources and logs
+    
+    The application will automatically retry connecting...
+    """)
 
 def get_available_models() -> Dict[str, ModelInfo]:
     """Get list of available models from Ollama server."""
@@ -291,20 +334,23 @@ def save_uploaded_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedF
         logger.error(f"Failed to save uploaded file: {str(e)}")
         raise RuntimeError(f"Failed to save uploaded file: {str(e)}")
 
-def pull_model(model_name: str) -> bool:
+def pull_model_with_progress(model_name: str, progress_container=st.sidebar) -> Tuple[bool, Dict[str, Any]]:
     """Pull a model from Ollama with progress tracking.
     
     Args:
         model_name: Name of the model to pull
+        progress_container: Streamlit container to show progress in (default: sidebar)
         
     Returns:
-        bool: True if successful, False otherwise
+        Tuple[bool, Dict[str, Any]]: (success, latest_progress)
+        - success: True if model was pulled successfully
+        - latest_progress: Dictionary containing the latest progress information
     """
     try:
         # Create placeholders for progress display
-        progress_text = st.sidebar.empty()
-        progress_bar = st.sidebar.progress(0)
-        status_text = st.sidebar.empty()
+        progress_text = progress_container.empty()
+        progress_bar = progress_container.progress(0)
+        status_text = progress_container.empty()
         
         progress_text.text(f"Pulling model: {model_name}")
         
@@ -315,6 +361,7 @@ def pull_model(model_name: str) -> bool:
         )
         
         if response.status_code == 200:
+            latest_progress = None
             for line in response.iter_lines():
                 if line:
                     progress_data = json.loads(line.decode())
@@ -328,6 +375,13 @@ def pull_model(model_name: str) -> bool:
                         # Update progress bar and status
                         progress_bar.progress(int(progress_pct))
                         status_text.text(f"Downloaded: {progress:,} / {total:,} bytes ({progress_pct:.1f}%)")
+                        
+                        latest_progress = {
+                            "progress": progress,
+                            "total": total,
+                            "status": status,
+                            "progress_pct": progress_pct
+                        }
                     else:
                         status_text.text(f"Status: {status}")
                         
@@ -335,17 +389,28 @@ def pull_model(model_name: str) -> bool:
                         progress_text.success(f"✅ Successfully pulled {model_name}")
                         progress_bar.empty()
                         status_text.empty()
-                        return True
+                        return True, latest_progress
+            
+            progress_text.error(f"❌ Failed to pull {model_name}")
+            progress_bar.empty()
+            status_text.empty()
+            return False, latest_progress
             
         progress_text.error(f"❌ Failed to pull {model_name}")
         progress_bar.empty()
         status_text.empty()
-        return False
+        return False, None
         
     except Exception as e:
         logger.error(f"Failed to pull model {model_name}: {str(e)}")
-        st.sidebar.error(f"❌ Failed to pull {model_name}: {str(e)}")
-        return False
+        if progress_container:
+            progress_container.error(f"❌ Failed to pull {model_name}: {str(e)}")
+        return False, None
+
+def pull_model(model_name: str) -> bool:
+    """Simple wrapper for pull_model_with_progress that only returns success status."""
+    success, _ = pull_model_with_progress(model_name)
+    return success
 
 def delete_model(model_id: str) -> bool:
     """Delete a model from Ollama.
@@ -431,98 +496,121 @@ def manage_models():
                         st.error(f"❌ Failed to delete {model_id}")
 
 def check_ollama_status() -> Dict[str, Any]:
-    """Check Ollama service status and model download progress.
-    
-    Returns:
-        Dict with status information including:
-        - is_ready: bool
-        - message: str
-        - models_available: List[str]
-        - is_downloading: bool
-        - download_status: Dict[str, Any]
-    """
+    """Check Ollama service status with improved error handling."""
     try:
-        # Check if Ollama service is accessible
-        response = requests.get(f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags")
+        # First check basic connectivity
+        try:
+            is_connected = check_ollama_connection()
+            if not is_connected:
+                return {
+                    "is_ready": False,
+                    "message": "Ollama service is not responding",
+                    "models_available": [],
+                    "is_downloading": False,
+                    "download_status": {},
+                    "connection_error": True
+                }
+        except OllamaConnectionError as e:
+            show_connection_error(str(e))
+            return {
+                "is_ready": False,
+                "message": str(e),
+                "models_available": [],
+                "is_downloading": False,
+                "download_status": {},
+                "connection_error": True
+            }
+
+        # Get available models
+        response = requests.get(
+            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags",
+            timeout=5
+        )
+        
         if response.status_code != 200:
+            show_connection_error("Ollama service returned unexpected response")
             return {
                 "is_ready": False,
                 "message": "Waiting for Ollama service to start...",
                 "models_available": [],
                 "is_downloading": False,
-                "download_status": {}
+                "download_status": {},
+                "connection_error": True
             }
         
         models_data = response.json().get("models", [])
         available_models = [m["name"] for m in models_data if not m["name"].endswith(":latest")]
         
-        # Expected models from init script
-        expected_models = {"mistral", "llama2", "codellama"}
-        missing_models = expected_models - set(available_models)
-        
-        if not missing_models:
+        # Check if mistral is available
+        if "mistral" in available_models:
             return {
                 "is_ready": True,
-                "message": "Ollama is ready with all required models!",
+                "message": "Ollama is ready with mistral model!",
                 "models_available": available_models,
                 "is_downloading": False,
-                "download_status": {}
+                "download_status": {},
+                "connection_error": False
             }
         
-        # Check if models are being downloaded and initiate downloads if needed
+        # Try to pull mistral if not available
         try:
-            # Try to get current download progress
-            pull_response = requests.post(
-                f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/pull",
-                json={"model": list(missing_models)[0], "stream": True},
-                stream=True
-            )
+            success, progress = pull_model_with_progress("mistral", st)
             
-            if pull_response.status_code == 200:
-                # Process the streaming response
-                for line in pull_response.iter_lines():
-                    if line:
-                        progress_data = json.loads(line.decode())
-                        status = progress_data.get("status", "")
-                        
-                        if status == "downloading":
-                            return {
-                                "is_ready": False,
-                                "message": "Downloading required models...",
-                                "models_available": available_models,
-                                "is_downloading": True,
-                                "download_status": {
-                                    "current_model": list(missing_models)[0],
-                                    "progress": progress_data.get("completed", 0),
-                                    "total": progress_data.get("total", 100),
-                                    "status": status,
-                                    "digest": progress_data.get("digest", ""),
-                                    "missing_models": list(missing_models)
-                                }
-                            }
-                        elif status == "success":
-                            # Model download completed, break to recheck available models
-                            break
-                            
+            if success:
+                return {
+                    "is_ready": True,
+                    "message": "Mistral model download complete!",
+                    "models_available": available_models + ["mistral"],
+                    "is_downloading": False,
+                    "download_status": {},
+                    "connection_error": False
+                }
+            elif progress:
+                return {
+                    "is_ready": False,
+                    "message": "Downloading mistral model...",
+                    "models_available": available_models,
+                    "is_downloading": True,
+                    "download_status": {
+                        "current_model": "mistral",
+                        "progress": progress.get("progress", 0),
+                        "total": progress.get("total", 100),
+                        "status": progress.get("status", "downloading")
+                    },
+                    "connection_error": False
+                }
+            
+            return {
+                "is_ready": False,
+                "message": "Initiating mistral model download...",
+                "models_available": available_models,
+                "is_downloading": True,
+                "download_status": {},
+                "connection_error": False
+            }
+                
         except Exception as e:
-            logger.warning(f"Failed to get model progress: {str(e)}")
-            
-        return {
-            "is_ready": False,
-            "message": "Initiating model downloads...",
-            "models_available": available_models,
-            "is_downloading": True,
-            "download_status": {"missing_models": list(missing_models)}
-        }
+            logger.error(f"Failed to pull model: {str(e)}")
+            show_connection_error(f"Failed to download model: {str(e)}")
+            return {
+                "is_ready": False,
+                "message": "Error downloading model",
+                "models_available": available_models,
+                "is_downloading": False,
+                "download_status": {},
+                "connection_error": True
+            }
             
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to connect to Ollama: {str(e)}")
+        show_connection_error(str(e))
         return {
             "is_ready": False,
             "message": "Waiting for Ollama service to start...",
             "models_available": [],
             "is_downloading": False,
-            "download_status": {}
+            "download_status": {},
+            "connection_error": True
         }
 
 # Set page config
@@ -537,8 +625,10 @@ try:
     st.title("🔍 Sherlog Parser")
     st.write("Upload your log file and analyze patterns using our advanced ML pipeline.")
 
-    # Always show model management in sidebar
-    manage_models()
+    # Create placeholders for progress display
+    progress_text = st.empty()
+    progress_bar = st.empty()
+    status_text = st.empty()
 
     # Check Ollama status before proceeding with main UI
     ollama_status = check_ollama_status()
@@ -548,12 +638,25 @@ try:
         st.markdown("### 🚀 Initializing System")
         st.info(ollama_status["message"])
         
-        if ollama_status["is_downloading"]:
+        if ollama_status.get("connection_error", False):
+            # Add reconnection information
+            st.markdown("""
+            #### 🔄 Auto-Reconnection
+            The application will automatically attempt to reconnect to the Ollama service.
+            You can:
+            - Wait for automatic reconnection
+            - Check the Ollama service status
+            - Verify your network connection
+            """)
+            # Add a manual retry button
+            if st.button("🔄 Retry Connection"):
+                st.rerun()
+        elif ollama_status["is_downloading"]:
             st.markdown("#### Download Progress")
             download_status = ollama_status["download_status"]
             
             # Show current model being downloaded
-            st.text(f"Downloading: {download_status.get('current_model', 'Preparing...')}")
+            progress_text.text("Downloading: mistral")
             
             # Calculate and show progress
             progress = download_status.get("progress", 0)
@@ -562,42 +665,37 @@ try:
             
             if progress > 0:  # Only show progress bar if we have actual progress
                 # Show progress bar
-                progress_bar = st.progress(0)
                 progress_bar.progress(int(progress_pct))
                 
                 # Show detailed status
-                st.text(f"Progress: {progress:,} / {total:,} bytes ({progress_pct:.1f}%)")
+                status_text.text(f"Progress: {progress:,} / {total:,} bytes ({progress_pct:.1f}%)")
             else:
-                st.text("Preparing download...")
-            
-            if download_status.get("missing_models"):
-                st.text(f"Models to download: {', '.join(download_status['missing_models'])}")
-        
-        if ollama_status["models_available"]:
-            st.markdown("#### Currently Available Models")
-            st.text(", ".join(ollama_status["models_available"]))
+                status_text.text("Preparing download...")
             
         # Add some helpful information while waiting
         with st.expander("ℹ️ What's happening?"):
             st.markdown("""
             The system is currently:
             1. Starting the Ollama service
-            2. Downloading required AI models:
-               - Mistral (General purpose)
-               - Llama2 (Advanced reasoning)
-               - CodeLlama (Code analysis)
+            2. Downloading the Mistral model:
+               - A powerful language model for log analysis
+               - Optimized for pattern recognition
+               - ~4GB download size
             3. Preparing the analysis pipeline
             
-            This may take a few minutes on first startup. The models will be cached for future use.
-            
-            💡 Tip: You can use the Model Management panel in the sidebar to manually pull or remove models.
+            This may take a few minutes on first startup. The model will be cached for future use.
             """)
             
         # Rerun the app every few seconds to check status
-        time.sleep(5)
+        time.sleep(2)  # Reduced sleep time for more responsive updates
         st.rerun()
         st.stop()
-    
+
+    # Clear progress display elements when done
+    progress_text.empty()
+    progress_bar.empty()
+    status_text.empty()
+
     # Model selection
     model_config = handle_model_selection()
     

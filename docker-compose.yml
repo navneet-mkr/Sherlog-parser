@@ -94,17 +94,17 @@ services:
       - OLLAMA_MODELS=/root/.ollama/models
       - OLLAMA_USE_MLX=true
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags", "||", "exit", "0"]
+      test: 
+        - CMD-SHELL
+        - 'curl -s -f "http://localhost:11434/api/tags" || exit 1'
       interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         chmod +x /init-ollama.sh
-        ollama serve &
-        sleep 5
         /init-ollama.sh
     restart: unless-stopped
     networks:

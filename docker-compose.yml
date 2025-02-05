@@ -18,8 +18,8 @@ services:
       - PYTHONPATH=/app
       - DAGSTER_GRPC_HOST=0.0.0.0
       - DAGSTER_GRPC_PORT=4000
-      - OLLAMA_HOST=http://ollama
-      - OLLAMA_PORT=11434
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama}
+      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
       - MODELS_DIR=/data/models
     healthcheck:
       test: 
@@ -58,14 +58,15 @@ services:
       - PYTHONPATH=/app
       - DAGSTER_GRPC_HOST=dagster
       - DAGSTER_GRPC_PORT=4000
-      - OLLAMA_HOST=http://ollama
-      - OLLAMA_PORT=11434
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama}
+      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
       - MODELS_DIR=/data/models
     depends_on:
       dagster:
         condition: service_started
       ollama:
         condition: service_started
+        required: false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 10s
@@ -77,6 +78,8 @@ services:
       - app_network
 
   ollama:
+    profiles:
+      - with-ollama
     image: ollama/ollama:latest
     platform: linux/arm64
     ports:
@@ -88,27 +91,33 @@ services:
       resources:
         limits:
           memory: 16G
+        reservations:
+          memory: 4G
     environment:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_ORIGINS=*
       - OLLAMA_MODELS=/root/.ollama/models
       - OLLAMA_USE_MLX=true
+      - OLLAMA_DOWNLOAD_TIMEOUT=300
+      - OLLAMA_DOWNLOAD_RETRIES=3
     healthcheck:
       test: 
         - CMD-SHELL
         - 'curl -s -f "http://localhost:11434/api/tags" || exit 1'
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 5
-      start_period: 30s
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        chmod +x /init-ollama.sh
-        /init-ollama.sh
+      start_period: 60s
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    sysctls:
+      - net.core.somaxconn=65535
     restart: unless-stopped
     networks:
       - app_network
+    stop_grace_period: 60s
 
   test:
     build:

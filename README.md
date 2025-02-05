@@ -1,6 +1,51 @@
 # 🔍 Sherlog-parser
 
-A powerful, intelligent log parsing and analysis tool that leverages Large Language Models (LLMs) and machine learning to automatically cluster, analyze, and extract patterns from log files. Built with Ollama integration for efficient local inference.
+A powerful, intelligent log parsing and analysis tool that leverages Large Language Models (LLMs) and machine learning to automatically cluster, analyze, and extract patterns from log files.
+
+## 🚀 Quick Start (2 minutes)
+
+```bash
+# Clone and start with default settings (using Ollama container)
+git clone https://github.com/yourusername/log-parse-ai.git
+cd log-parse-ai
+./start.sh
+
+# OR use your local Ollama installation
+./start.sh --use-local-ollama
+
+# OR connect to remote Ollama instance
+./start.sh --ollama-host http://your-ollama-server --ollama-port 11434
+```
+
+That's it! Access the web interface at http://localhost:8501 🎉
+
+## 🔄 Flexible Ollama Integration
+
+Choose how you want to use Ollama:
+
+1. **Containerized** (Default): 
+   - Zero setup required
+   - Automatically managed by Docker
+   - Isolated environment
+   ```bash
+   ./start.sh
+   ```
+
+2. **Local Installation**:
+   - Use your existing Ollama setup
+   - Share models with other applications
+   - Faster startup time
+   ```bash
+   ./start.sh --use-local-ollama
+   ```
+
+3. **Remote Instance**:
+   - Connect to any Ollama server
+   - Share resources across network
+   - Custom configuration
+   ```bash
+   ./start.sh --ollama-host http://your-server --ollama-port 11434
+   ```
 
 ## ✨ Features
 
@@ -130,4 +175,109 @@ For more detailed information:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details. 
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📋 Prerequisites
+
+- Docker and Docker Compose
+- 16GB+ RAM recommended
+- (Optional) Local Ollama installation if not using containerized version
+
+## 🛠️ Deployment Options
+
+### Using the Startup Script
+
+The `start.sh` script provides flexible deployment options:
+
+```bash
+# Default setup (using containerized Ollama)
+./start.sh
+
+# Use local Ollama instance
+./start.sh --use-local-ollama
+
+# Use custom Ollama host and port
+./start.sh --ollama-host http://my-ollama-server --ollama-port 12345
+```
+
+Available options:
+- `--ollama-host HOST`: Specify custom Ollama host (default: http://ollama)
+- `--ollama-port PORT`: Specify custom Ollama port (default: 11434)
+- `--use-local-ollama`: Use local Ollama instance instead of container
+- `-h, --help`: Show help message
+
+### Manual Configuration
+
+If you prefer manual configuration:
+
+1. Set environment variables:
+```bash
+export OLLAMA_HOST=http://your-ollama-host
+export OLLAMA_PORT=your-ollama-port
+```
+
+2. Start services:
+```bash
+# With containerized Ollama
+docker compose --profile with-ollama up -d
+
+# Without Ollama container (using external instance)
+docker compose up -d dagster streamlit
+```
+
+## 📝 Usage
+
+1. Access the web interface at http://localhost:8501
+2. Upload a log file (.log or .txt)
+3. Select processing parameters:
+   - Number of clusters
+   - Batch size
+   - Model settings
+4. Start analysis
+5. View results in the Dagster UI (http://localhost:3000)
+
+## 🔍 Monitoring & Management
+
+- View application logs:
+```bash
+docker compose logs -f
+```
+
+- Stop all services:
+```bash
+docker compose down
+```
+
+- Manage models through the UI:
+  - Pull new models
+  - Remove unused models
+  - View model details
+
+## 🔧 Troubleshooting
+
+1. **Ollama Connection Issues**
+   - Check if Ollama is running at the specified host/port
+   - Verify network connectivity
+   - Check system resources
+
+2. **Service Health**
+   - Monitor service status in the UI
+   - Check Docker logs for errors
+   - Verify port availability
+
+3. **Performance Issues**
+   - Adjust batch size based on available memory
+   - Monitor resource usage
+   - Consider using a more powerful machine for large logs
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## 📄 License
+
+[Your License Here] 

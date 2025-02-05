@@ -625,10 +625,13 @@ def get_container_status() -> Dict[str, Dict[str, Any]]:
     try:
         client = docker.from_env()
         services = {
-            "ollama": {"name": "Ollama LLM Service", "icon": "🤖"},
             "dagster": {"name": "Dagster Pipeline", "icon": "🔄"},
             "streamlit": {"name": "Web Interface", "icon": "🌐"}
         }
+        
+        # Only include Ollama if we're not using an external instance
+        if os.getenv("OLLAMA_HOST", "http://ollama").endswith("ollama"):
+            services["ollama"] = {"name": "Ollama LLM Service", "icon": "🤖"}
         
         status = {}
         for service_id, info in services.items():
@@ -641,7 +644,8 @@ def get_container_status() -> Dict[str, Dict[str, Any]]:
                     "status": container.status,
                     "health": health,
                     "running": container.status == "running",
-                    "container_id": container.id[:12]
+                    "container_id": container.id[:12],
+                    "is_external": False
                 }
             except NotFound:
                 status[service_id] = {
@@ -650,8 +654,41 @@ def get_container_status() -> Dict[str, Dict[str, Any]]:
                     "status": "not found",
                     "health": "unknown",
                     "running": False,
-                    "container_id": None
+                    "container_id": None,
+                    "is_external": False
                 }
+        
+        # Add external Ollama status if using external instance
+        if not os.getenv("OLLAMA_HOST", "http://ollama").endswith("ollama"):
+            try:
+                # Check if external Ollama is accessible
+                response = requests.get(
+                    f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags",
+                    timeout=5
+                )
+                status["ollama"] = {
+                    "name": "Ollama LLM Service (External)",
+                    "icon": "🤖",
+                    "status": "running" if response.status_code == 200 else "error",
+                    "health": "healthy" if response.status_code == 200 else "unhealthy",
+                    "running": response.status_code == 200,
+                    "container_id": None,
+                    "is_external": True,
+                    "url": f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}"
+                }
+            except Exception as e:
+                status["ollama"] = {
+                    "name": "Ollama LLM Service (External)",
+                    "icon": "🤖",
+                    "status": "error",
+                    "health": "unhealthy",
+                    "running": False,
+                    "container_id": None,
+                    "is_external": True,
+                    "url": f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}",
+                    "error": str(e)
+                }
+        
         return status
     except Exception as e:
         logger.error(f"Failed to get container status: {str(e)}")
@@ -703,14 +740,24 @@ def show_system_status():
         
         # Show container details in expander
         with st.sidebar.expander("Details"):
-            st.markdown(f"""
-            - **Status**: {status['status']}
-            - **Health**: {status['health']}
-            - **Container ID**: {status['container_id'] or 'N/A'}
-            """)
+            if status.get('is_external', False):
+                st.markdown(f"""
+                - **Type**: External Service
+                - **URL**: {status.get('url', 'N/A')}
+                - **Status**: {status['status']}
+                - **Health**: {status['health']}
+                """)
+                if 'error' in status:
+                    st.error(f"Error: {status['error']}")
+            else:
+                st.markdown(f"""
+                - **Status**: {status['status']}
+                - **Health**: {status['health']}
+                - **Container ID**: {status['container_id'] or 'N/A'}
+                """)
         
-        # Add restart button if not running or unhealthy
-        if not status['running'] or status['health'] == 'unhealthy':
+        # Add restart button if not running or unhealthy and not external
+        if (not status['running'] or status['health'] == 'unhealthy') and not status.get('is_external', False):
             if st.sidebar.button(f"🔄 Restart {status['name']}", key=f"restart_{service_id}"):
                 success, message = restart_container(service_id)
                 if success:

@@ -2,17 +2,18 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and uv
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install Dagster packages
-RUN pip install \
+# Install Dagster packages with uv
+RUN uv pip install \
     dagster \
     dagit \
     dagster-graphql \
@@ -22,7 +23,7 @@ RUN pip install \
 
 # Copy requirements and install Python dependencies
 COPY setup.py .
-RUN pip install -e .[dev]
+RUN uv pip install -e .[dev]
 
 # Create necessary directories
 RUN mkdir -p /data/dagster_home /data/cache /data/logs /data/models/cache
@@ -37,8 +38,8 @@ ENV DAGSTER_HOME=/data/dagster_home
 # Copy source code
 COPY src ./src
 
-# Install additional dependencies
-RUN pip install --no-cache-dir \
+# Install additional dependencies with uv
+RUN uv pip install --no-cache-dir \
     numpy \
     scikit-learn \
     sentence-transformers \

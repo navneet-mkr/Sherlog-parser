@@ -5,13 +5,11 @@ import requests
 import time
 import json
 from pathlib import Path
-from dagster import DagsterInstance, JobDefinition
+from dagster import DagsterInstance
 from src.core import log_processing_job
 from langchain_community.llms import Ollama
-from langchain_community.chat_models import ChatOpenAI
 from langchain.schema.language_model import BaseLanguageModel
-from huggingface_hub import hf_hub_download
-from typing import Optional, Dict, TypedDict, Literal, Union, Any, List, Set, Tuple
+from typing import Optional, Dict, TypedDict, Literal, Union, Any, Tuple
 from src.models.config import (
     ModelInfo,
     LLMConfig,
@@ -22,8 +20,7 @@ from src.models.config import (
 )
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import docker
-from docker.errors import NotFound, APIError
-from datetime import datetime
+from docker.errors import NotFound
 
 # Type definitions
 class ModelInfo(TypedDict):

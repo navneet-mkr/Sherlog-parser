@@ -2,22 +2,23 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and uv
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Copy requirements first
 COPY requirements.txt .
 COPY setup.py .
 
-# Install all dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install -e .
+# Install all dependencies with uv
+RUN uv pip install --no-cache-dir -r requirements.txt && \
+    uv pip install -e .
 
 # Create necessary directories including dagster_home
 RUN mkdir -p /data/cache /data/logs /data/dagster_home /data/models/cache

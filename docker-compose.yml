@@ -54,9 +54,9 @@ services:
       - MODELS_DIR=/data/models
     depends_on:
       dagster:
-        condition: service_healthy
+        condition: service_started
       ollama:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 10s

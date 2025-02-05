@@ -332,77 +332,219 @@ def save_uploaded_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedF
         logger.error(f"Failed to save uploaded file: {str(e)}")
         raise RuntimeError(f"Failed to save uploaded file: {str(e)}")
 
+def format_size(size_bytes):
+    """Format size in bytes to human readable format."""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} TB"
+
+def calculate_eta(completed, total, start_time):
+    """Calculate estimated time remaining."""
+    if completed == 0:
+        return "calculating..."
+    
+    elapsed = time.time() - start_time
+    rate = completed / elapsed  # bytes per second
+    remaining_bytes = total - completed
+    eta_seconds = remaining_bytes / rate if rate > 0 else 0
+    
+    if eta_seconds < 60:
+        return f"{eta_seconds:.0f} seconds"
+    elif eta_seconds < 3600:
+        return f"{eta_seconds/60:.0f} minutes"
+    else:
+        return f"{eta_seconds/3600:.1f} hours"
+
+class DownloadStats:
+    """Class to track download statistics with moving average speed calculation."""
+    def __init__(self, window_size=5):
+        self.speeds = []
+        self.window_size = window_size
+        self.last_update = time.time()
+        self.last_completed = 0
+        self.start_time = time.time()
+
+    def update(self, completed: int) -> float:
+        """Update stats and return current speed in bytes/second."""
+        current_time = time.time()
+        elapsed = current_time - self.last_update
+        if elapsed > 0:
+            speed = (completed - self.last_completed) / elapsed
+            self.speeds.append(speed)
+            # Keep only the last window_size speeds
+            if len(self.speeds) > self.window_size:
+                self.speeds.pop(0)
+            self.last_update = current_time
+            self.last_completed = completed
+            return sum(self.speeds) / len(self.speeds)
+        return 0
+
+    def get_eta(self, completed: int, total: int) -> str:
+        """Calculate ETA based on moving average speed."""
+        if not self.speeds or completed == 0:
+            return "calculating..."
+        
+        avg_speed = sum(self.speeds) / len(self.speeds)
+        remaining_bytes = total - completed
+        eta_seconds = remaining_bytes / avg_speed if avg_speed > 0 else 0
+        
+        if eta_seconds < 60:
+            return f"{eta_seconds:.0f} seconds"
+        elif eta_seconds < 3600:
+            return f"{eta_seconds/60:.0f} minutes"
+        else:
+            return f"{eta_seconds/3600:.1f} hours"
+
+def show_download_error(container, model_name: str, error_msg: str = None):
+    """Show download error with terminal command alternative."""
+    container.error("### ❌ Download Failed")
+    if error_msg:
+        container.markdown(f"**Error**: {error_msg}")
+    
+    container.markdown("""
+    #### 🔧 Alternative Download Method
+    
+    You can try downloading the model directly using the terminal command:
+    ```bash
+    ollama pull {model_name}
+    ```
+    
+    After the download completes, click the 'Retry Connection' button in the UI.
+    """.format(model_name=model_name))
+
 def pull_model_with_progress(model_name: str, progress_container=st.sidebar) -> Tuple[bool, Dict[str, Any]]:
     """Pull a model from Ollama with progress tracking.
     
     Args:
         model_name: Name of the model to pull
-        progress_container: Streamlit container to show progress in (default: sidebar)
+        progress_container: Streamlit container to show progress in
         
     Returns:
         Tuple[bool, Dict[str, Any]]: (success, latest_progress)
-        - success: True if model was pulled successfully
-        - latest_progress: Dictionary containing the latest progress information
     """
     try:
-        # Create placeholders for progress display
-        progress_text = progress_container.empty()
-        progress_bar = progress_container.progress(0)
-        status_text = progress_container.empty()
-        
-        progress_text.text(f"Pulling model: {model_name}")
-        
-        response = requests.post(
-            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/pull",
-            json={"model": model_name, "stream": True},
-            stream=True
-        )
-        
-        if response.status_code == 200:
-            latest_progress = None
-            for line in response.iter_lines():
-                if line:
-                    progress_data = json.loads(line.decode())
-                    status = progress_data.get("status", "")
-                    
-                    if status == "downloading":
-                        progress = progress_data.get("completed", 0)
-                        total = progress_data.get("total", 100)
-                        progress_pct = (progress / total) * 100 if total > 0 else 0
-                        
-                        # Update progress bar and status
-                        progress_bar.progress(int(progress_pct))
-                        status_text.text(f"Downloaded: {progress:,} / {total:,} bytes ({progress_pct:.1f}%)")
-                        
-                        latest_progress = {
-                            "progress": progress,
-                            "total": total,
-                            "status": status,
-                            "progress_pct": progress_pct
-                        }
-                    else:
-                        status_text.text(f"Status: {status}")
-                        
-                    if status == "success":
-                        progress_text.success(f"✅ Successfully pulled {model_name}")
-                        progress_bar.empty()
-                        status_text.empty()
-                        return True, latest_progress
+        # Create a single container for all progress information
+        download_container = progress_container.container()
+        with download_container:
+            header = st.markdown(f"### 📥 Downloading {model_name}")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            details_text = st.empty()
             
-            progress_text.error(f"❌ Failed to pull {model_name}")
-            progress_bar.empty()
-            status_text.empty()
-            return False, latest_progress
+            # Initialize download statistics
+            stats = DownloadStats()
+            current_digest = None
+            downloading_started = False
             
-        progress_text.error(f"❌ Failed to pull {model_name}")
-        progress_bar.empty()
-        status_text.empty()
-        return False, None
-        
+            response = requests.post(
+                f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/pull",
+                json={"model": model_name, "stream": True},
+                stream=True
+            )
+            
+            if response.status_code == 200:
+                latest_progress = None
+                
+                for line in response.iter_lines():
+                    if line:
+                        progress_data = json.loads(line.decode())
+                        status = progress_data.get("status", "")
+                        
+                        # Handle different status messages
+                        if status == "pulling manifest":
+                            status_text.markdown("⏳ Pulling manifest...")
+                            details_text.empty()
+                            
+                        elif status == "downloading":
+                            downloading_started = True
+                            digest = progress_data.get("digest", "")
+                            
+                            # Only update UI elements if we have progress information
+                            if "completed" in progress_data and "total" in progress_data:
+                                progress = progress_data.get("completed", 0)
+                                total = progress_data.get("total", 100)
+                                
+                                # Show new digest being downloaded
+                                if digest != current_digest:
+                                    current_digest = digest
+                                    status_text.markdown(f"⬇️ Downloading layer: `{digest[:12]}...`")
+                                
+                                # Calculate progress percentage
+                                progress_pct = (progress / total) * 100 if total > 0 else 0
+                                progress_bar.progress(int(progress_pct))
+                                
+                                # Calculate speed using moving average
+                                speed = stats.update(progress)
+                                
+                                # Update details with all information
+                                details_html = f"""
+                                <div style="margin: 10px 0; font-size: 0.9em;">
+                                    <div style="color: #666;">
+                                        <span style="display: inline-block; width: 80px;">Size:</span>
+                                        {format_size(progress)} / {format_size(total)} ({progress_pct:.1f}%)
+                                    </div>
+                                    <div style="color: #666;">
+                                        <span style="display: inline-block; width: 80px;">Speed:</span>
+                                        {format_size(speed)}/s
+                                    </div>
+                                    <div style="color: #666;">
+                                        <span style="display: inline-block; width: 80px;">ETA:</span>
+                                        {stats.get_eta(progress, total)}
+                                    </div>
+                                </div>
+                                """
+                                details_text.markdown(details_html, unsafe_allow_html=True)
+                                
+                                latest_progress = {
+                                    "progress": progress,
+                                    "total": total,
+                                    "status": status,
+                                    "progress_pct": progress_pct,
+                                    "speed": speed,
+                                    "digest": digest
+                                }
+                            else:
+                                # If we don't have progress info yet
+                                status_text.markdown(f"⏳ Preparing download for layer: `{digest[:12]}...`")
+                                details_text.empty()
+                                
+                        elif status == "verifying sha256 digest":
+                            status_text.markdown("🔍 Verifying downloaded files...")
+                            details_text.empty()
+                            progress_bar.progress(100)
+                            
+                        elif status == "writing manifest":
+                            status_text.markdown("📝 Writing manifest...")
+                            
+                        elif status == "removing any unused layers":
+                            status_text.markdown("🧹 Cleaning up...")
+                            
+                        elif status == "success":
+                            header.markdown("### ✅ Download Complete!")
+                            status_text.markdown(f"Successfully downloaded {model_name}")
+                            details_text.empty()
+                            progress_bar.empty()
+                            return True, latest_progress
+                        
+                        else:
+                            status_text.markdown(f"ℹ️ Status: {status}")
+                
+                # If we get here without a success status
+                if downloading_started:
+                    show_download_error(download_container, model_name, "Download did not complete successfully")
+                else:
+                    show_download_error(download_container, model_name, "Failed to start download")
+                return False, latest_progress
+                
+            show_download_error(download_container, model_name, "Failed to connect to Ollama")
+            return False, None
+            
     except Exception as e:
-        logger.error(f"Failed to pull model {model_name}: {str(e)}")
+        logger.error(f"Failed to download model {model_name}: {str(e)}")
         if progress_container:
-            progress_container.error(f"❌ Failed to pull {model_name}: {str(e)}")
+            show_download_error(progress_container, model_name, str(e))
         return False, None
 
 def pull_model(model_name: str) -> bool:

@@ -23,6 +23,18 @@ That's it! Access the web interface at http://localhost:8501 🎉
 
 We provide a comprehensive evaluation framework to assess LogParser-LLM's performance against benchmark datasets:
 
+### Quick Start
+
+1. Download evaluation datasets:
+```bash
+# Download Loghub-2k datasets automatically
+./download_datasets.sh
+
+# LogPub datasets require manual download after registration
+# See src/eval/README.md for details
+```
+
+2. Run evaluation:
 ```bash
 # Run evaluation in Docker (recommended)
 docker compose --profile eval up eval

@@ -2,9 +2,34 @@
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
-from dataclasses import dataclass
+from typing import Dict, List, Optional, Set, Tuple, Any
+from dataclasses import dataclass, field
+import logging
 import pandas as pd
+from pydantic import BaseModel, Field, validator
+
+logger = logging.getLogger(__name__)
+
+class DatasetValidationError(Exception):
+    """Raised when dataset validation fails."""
+    pass
+
+class DatasetNotFoundError(Exception):
+    """Raised when dataset files are not found."""
+    pass
+
+class LogTemplate(BaseModel):
+    """Model for a log template with metadata."""
+    template: str
+    frequency: int = Field(default=1)
+    parameters: Dict[str, str] = Field(default_factory=dict)
+
+    @validator('template')
+    def template_not_empty(cls, v: str) -> str:
+        """Validate template is not empty."""
+        if not v.strip():
+            raise ValueError("Template cannot be empty")
+        return v
 
 @dataclass
 class LogDataset:
@@ -15,14 +40,50 @@ class LogDataset:
     raw_logs: List[str]
     ground_truth_templates: Dict[int, str]  # log_id -> template
     ground_truth_parameters: Dict[int, Dict[str, str]]  # log_id -> {param_name: value}
+    metadata: Dict[str, Any] = field(default_factory=dict)
     
     @property
     def size(self) -> int:
         """Return number of logs in dataset."""
         return len(self.raw_logs)
+    
+    def validate(self) -> None:
+        """Validate dataset integrity."""
+        # Check for empty dataset
+        if not self.raw_logs:
+            raise DatasetValidationError(f"Dataset {self.name} has no logs")
+        
+        # Check template coverage
+        missing_templates = set(range(len(self.raw_logs))) - set(self.ground_truth_templates.keys())
+        if missing_templates:
+            raise DatasetValidationError(
+                f"Dataset {self.name} is missing templates for log IDs: {missing_templates}"
+            )
+        
+        # Check for empty templates
+        empty_templates = [
+            log_id for log_id, template in self.ground_truth_templates.items()
+            if not template.strip()
+        ]
+        if empty_templates:
+            raise DatasetValidationError(
+                f"Dataset {self.name} has empty templates for log IDs: {empty_templates}"
+            )
+        
+        # Validate parameter consistency
+        for log_id in self.ground_truth_templates:
+            if log_id not in self.ground_truth_parameters:
+                logger.warning(
+                    f"Dataset {self.name}: Log ID {log_id} has no parameters"
+                )
 
 class DatasetLoader:
     """Handles loading of evaluation datasets."""
+    
+    REQUIRED_COLUMNS = {
+        'structured': {'Content'},  # Minimum required columns
+        'templates': {'EventTemplate'}
+    }
     
     def __init__(self, base_dir: str = "data/eval_datasets"):
         """Initialize dataset loader.
@@ -35,10 +96,31 @@ class DatasetLoader:
         self.logpub_dir = self.base_dir / "logpub"
         
         # Validate directories exist
-        if not self.loghub_dir.exists():
-            raise ValueError(f"Loghub-2k directory not found at {self.loghub_dir}")
-        if not self.logpub_dir.exists():
-            raise ValueError(f"LogPub directory not found at {self.logpub_dir}")
+        if not self.base_dir.exists():
+            raise DatasetNotFoundError(f"Base directory not found at {self.base_dir}")
+    
+    def _validate_csv_file(self, file_path: Path, required_columns: Set[str]) -> None:
+        """Validate CSV file exists and has required columns.
+        
+        Args:
+            file_path: Path to CSV file
+            required_columns: Set of required column names
+            
+        Raises:
+            DatasetValidationError: If validation fails
+        """
+        if not file_path.exists():
+            raise DatasetNotFoundError(f"File not found: {file_path}")
+        
+        try:
+            df = pd.read_csv(file_path, nrows=0)  # Just read headers
+            missing_cols = required_columns - set(df.columns)
+            if missing_cols:
+                raise DatasetValidationError(
+                    f"File {file_path} missing required columns: {missing_cols}"
+                )
+        except Exception as e:
+            raise DatasetValidationError(f"Error reading {file_path}: {str(e)}")
     
     def _load_structured_logs(self, file_path: Path) -> Tuple[List[str], Dict[int, Dict[str, str]]]:
         """Load structured logs from CSV file.
@@ -48,24 +130,36 @@ class DatasetLoader:
             
         Returns:
             Tuple of (raw_logs, parameters_dict)
+            
+        Raises:
+            DatasetValidationError: If file format is invalid
         """
-        df = pd.read_csv(file_path)
+        try:
+            # Validate file
+            self._validate_csv_file(file_path, self.REQUIRED_COLUMNS['structured'])
+            
+            # Read data
+            df = pd.read_csv(file_path)
+            
+            # Extract raw logs
+            raw_logs = df['Content'].tolist()
+            
+            # Extract parameters
+            parameters = {}
+            for idx, row in df.iterrows():
+                param_dict = {}
+                # Look for parameter columns
+                for col in df.columns:
+                    if col.startswith('ParameterList'):
+                        value = row[col]
+                        if pd.notna(value):
+                            param_dict[f"param_{col.split('.')[-1]}"] = str(value)
+                parameters[idx] = param_dict
+            
+            return raw_logs, parameters
         
-        # Extract raw logs and parameters
-        raw_logs = df['Content'].tolist()
-        parameters = {}
-        
-        # Process each row to extract parameters
-        for idx, row in df.iterrows():
-            param_dict = {}
-            for col in df.columns:
-                if col.startswith('ParameterList'):
-                    value = row[col]
-                    if pd.notna(value):
-                        param_dict[f"param_{col.split('.')[-1]}"] = str(value)
-            parameters[idx] = param_dict
-        
-        return raw_logs, parameters
+        except Exception as e:
+            raise DatasetValidationError(f"Error loading structured logs: {str(e)}")
     
     def _load_templates(self, file_path: Path) -> Dict[int, str]:
         """Load ground truth templates from CSV file.
@@ -75,9 +169,34 @@ class DatasetLoader:
             
         Returns:
             Dictionary mapping log_id to template
+            
+        Raises:
+            DatasetValidationError: If file format is invalid
         """
-        df = pd.read_csv(file_path)
-        return dict(enumerate(df['EventTemplate'].tolist()))
+        try:
+            # Validate file
+            self._validate_csv_file(file_path, self.REQUIRED_COLUMNS['templates'])
+            
+            # Read data
+            df = pd.read_csv(file_path)
+            
+            # Convert to dictionary
+            templates = dict(enumerate(df['EventTemplate'].tolist()))
+            
+            # Validate templates
+            empty_templates = [
+                idx for idx, template in templates.items()
+                if not str(template).strip()
+            ]
+            if empty_templates:
+                raise DatasetValidationError(
+                    f"Empty templates found at indices: {empty_templates}"
+                )
+            
+            return templates
+        
+        except Exception as e:
+            raise DatasetValidationError(f"Error loading templates: {str(e)}")
     
     def load_dataset(self, system: str, dataset_type: str = "loghub_2k") -> LogDataset:
         """Load a specific dataset.
@@ -88,32 +207,65 @@ class DatasetLoader:
             
         Returns:
             LogDataset object containing raw logs and ground truth
+            
+        Raises:
+            DatasetNotFoundError: If dataset files not found
+            DatasetValidationError: If dataset format is invalid
         """
-        base = self.loghub_dir if dataset_type == "loghub_2k" else self.logpub_dir
-        system_dir = base / system
-        
-        if not system_dir.exists():
-            raise ValueError(f"System directory not found: {system_dir}")
-        
-        # Find structured and template files
-        structured_file = next(system_dir.glob("*.log_structured.csv"), None)
-        template_file = next(system_dir.glob("*.log_templates.csv"), None)
-        
-        if not structured_file or not template_file:
-            raise ValueError(f"Required files not found in {system_dir}")
-        
-        # Load data
-        raw_logs, parameters = self._load_structured_logs(structured_file)
-        templates = self._load_templates(template_file)
-        
-        return LogDataset(
-            name=f"{system}_{dataset_type}",
-            system=system,
-            dataset_type=dataset_type,
-            raw_logs=raw_logs,
-            ground_truth_templates=templates,
-            ground_truth_parameters=parameters
-        )
+        try:
+            # Determine base directory
+            base = self.loghub_dir if dataset_type == "loghub_2k" else self.logpub_dir
+            system_dir = base / system
+            
+            if not system_dir.exists():
+                raise DatasetNotFoundError(f"System directory not found: {system_dir}")
+            
+            # Find required files
+            structured_file = next(system_dir.glob("*.log_structured.csv"), None)
+            template_file = next(system_dir.glob("*.log_templates.csv"), None)
+            
+            if not structured_file or not template_file:
+                raise DatasetNotFoundError(
+                    f"Required files not found in {system_dir}. "
+                    "Need *_structured.csv and *_templates.csv"
+                )
+            
+            # Load data
+            raw_logs, parameters = self._load_structured_logs(structured_file)
+            templates = self._load_templates(template_file)
+            
+            # Create dataset
+            dataset = LogDataset(
+                name=f"{system}_{dataset_type}",
+                system=system,
+                dataset_type=dataset_type,
+                raw_logs=raw_logs,
+                ground_truth_templates=templates,
+                ground_truth_parameters=parameters,
+                metadata={
+                    "structured_file": str(structured_file),
+                    "template_file": str(template_file),
+                    "total_logs": len(raw_logs),
+                    "unique_templates": len(set(templates.values()))
+                }
+            )
+            
+            # Validate dataset
+            dataset.validate()
+            
+            logger.info(
+                f"Loaded dataset {dataset.name} with {dataset.size} logs "
+                f"and {len(set(dataset.ground_truth_templates.values()))} unique templates"
+            )
+            
+            return dataset
+            
+        except (DatasetNotFoundError, DatasetValidationError) as e:
+            # Re-raise these as is
+            raise
+        except Exception as e:
+            # Wrap other exceptions
+            raise DatasetValidationError(f"Error loading dataset {system}: {str(e)}")
     
     def list_available_datasets(self) -> Dict[str, List[str]]:
         """List available datasets in the evaluation directory.
@@ -126,19 +278,19 @@ class DatasetLoader:
             "logpub": []
         }
         
-        # Check Loghub-2k
-        if self.loghub_dir.exists():
-            available["loghub_2k"] = [
-                d.name for d in self.loghub_dir.iterdir() 
-                if d.is_dir() and any(d.glob("*.log_structured.csv"))
-            ]
+        # Helper function to check directory
+        def check_dir(path: Path, dataset_type: str) -> None:
+            if path.exists():
+                available[dataset_type] = [
+                    d.name for d in path.iterdir() 
+                    if d.is_dir() and 
+                    any(d.glob("*.log_structured.csv")) and
+                    any(d.glob("*.log_templates.csv"))
+                ]
         
-        # Check LogPub
-        if self.logpub_dir.exists():
-            available["logpub"] = [
-                d.name for d in self.logpub_dir.iterdir() 
-                if d.is_dir() and any(d.glob("*.log_structured.csv"))
-            ]
+        # Check both directories
+        check_dir(self.loghub_dir, "loghub_2k")
+        check_dir(self.logpub_dir, "logpub")
         
         return available
 

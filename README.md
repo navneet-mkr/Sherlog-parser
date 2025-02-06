@@ -19,6 +19,27 @@ cd log-parse-ai
 
 That's it! Access the web interface at http://localhost:8501 🎉
 
+## 📊 Evaluation Framework
+
+We provide a comprehensive evaluation framework to assess LogParser-LLM's performance against benchmark datasets:
+
+```bash
+# Run evaluation in Docker (recommended)
+docker compose --profile eval up eval
+
+# OR run locally
+./evaluate.sh
+```
+
+The framework:
+- Uses Loghub-2k and LogPub benchmark datasets
+- Calculates metrics from the LogParser-LLM paper
+- Integrates with Dagster for pipeline orchestration
+- Supports multiple Ollama models
+- Caches results for faster re-evaluation
+
+For detailed setup and usage instructions, see [Evaluation Framework Documentation](src/eval/README.md).
+
 ## 🔄 Flexible Ollama Integration
 
 Choose how you want to use Ollama:

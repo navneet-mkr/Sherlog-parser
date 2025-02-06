@@ -119,6 +119,32 @@ services:
       - app_network
     stop_grace_period: 60s
 
+  eval:
+    profiles:
+      - eval
+    build:
+      context: .
+      dockerfile: src/docker/Dockerfile.eval
+    volumes:
+      - .:/app
+      - eval_data:/app/data
+      - eval_cache:/app/data/eval_cache
+      - ./data/eval_datasets:/app/data/eval_datasets:ro  # Mount datasets as read-only
+    environment:
+      - PYTHONPATH=/app
+      - DAGSTER_HOME=/app/data
+      - DAGSTER_GRPC_HOST=dagster
+      - DAGSTER_GRPC_PORT=4000
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama}
+      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
+    depends_on:
+      dagster:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - app_network
+
   test:
     build:
       context: .
@@ -146,4 +172,6 @@ volumes:
   dagster_home:
   dagster_tmp:
   model_storage:
-  ollama_models: 
+  ollama_models:
+  eval_data:
+  eval_cache: 

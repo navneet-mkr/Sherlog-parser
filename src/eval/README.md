@@ -38,7 +38,13 @@ src/eval/
 #### Loghub-2k Dataset
 The Loghub-2k dataset is available from the LogPAI team's repository:
 
-1. Download from LogHub:
+1. Using the download script (Recommended):
+```bash
+./download_datasets.sh
+```
+This script will automatically download and organize all required datasets in the correct directory structure.
+
+2. Manual download from LogHub:
 ```bash
 # Create dataset directory
 mkdir -p data/eval_datasets/loghub_2k

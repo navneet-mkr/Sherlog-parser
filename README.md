@@ -153,7 +153,7 @@ Configuration is managed through environment variables in `.env`:
 
 ```bash
 # Ollama Settings
-OLLAMA_HOST=http://ollama
+OLLAMA_HOST=http://localhost
 OLLAMA_PORT=11434
 OLLAMA_TIMEOUT=120
 
@@ -234,7 +234,7 @@ The `start.sh` script provides flexible deployment options:
 ```
 
 Available options:
-- `--ollama-host HOST`: Specify custom Ollama host (default: http://ollama)
+- `--ollama-host HOST`: Specify custom Ollama host (default: http://localhost)
 - `--ollama-port PORT`: Specify custom Ollama port (default: 11434)
 - `--use-local-ollama`: Use local Ollama instance instead of container
 - `-h, --help`: Show help message

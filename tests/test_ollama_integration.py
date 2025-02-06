@@ -12,7 +12,7 @@ from src.ui.app import (
 
 # Test configuration
 TEST_SETTINGS = OllamaSettings(
-    host="http://ollama",
+    host="http://localhost",
     port=11434
 )
 

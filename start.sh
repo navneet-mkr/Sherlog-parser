@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Default values
-DEFAULT_OLLAMA_HOST="http://ollama"
+DEFAULT_OLLAMA_HOST="http://localhost"
 DEFAULT_OLLAMA_PORT="11434"
 
 # Color codes
@@ -125,7 +125,7 @@ if [ "$USE_LOCAL_OLLAMA" = true ] || [ "$OLLAMA_HOST" != "$DEFAULT_OLLAMA_HOST" 
     CONTAINER_OLLAMA_HOST=$(get_container_ollama_host)
     export CONTAINER_OLLAMA_URL="http://${CONTAINER_OLLAMA_HOST}"
 else
-    CONTAINER_OLLAMA_URL="http://ollama"
+    CONTAINER_OLLAMA_URL="http://localhost"
 fi
 
 # Show initialization progress

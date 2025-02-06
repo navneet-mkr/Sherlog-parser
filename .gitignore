@@ -94,8 +94,17 @@ Thumbs.db
 *~
 
 # Project specific
-/data/dagster_home/
+/data/
 /data/logs/
-/data/models/cache/
+/data/models/
 *.duckdb
-*.duckdb.wal 
+*.duckdb.wal
+
+# Testing
+htmlcov/
+.tox/
+
+# Misc
+.local/
+*.bak
+*.tmp 

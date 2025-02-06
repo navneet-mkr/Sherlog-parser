@@ -6,6 +6,39 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Function to check and install wget
+check_wget() {
+    if ! command -v wget &> /dev/null; then
+        echo -e "${YELLOW}wget is not installed. Attempting to install...${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            if command -v brew &> /dev/null; then
+                brew install wget
+            else
+                echo -e "${RED}Homebrew is not installed. Please install wget manually:${NC}"
+                echo "1. Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                echo "2. Then run: brew install wget"
+                exit 1
+            fi
+        elif command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y wget
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y wget
+        else
+            echo -e "${RED}Could not install wget automatically. Please install wget manually.${NC}"
+            exit 1
+        fi
+        
+        if ! command -v wget &> /dev/null; then
+            echo -e "${RED}Failed to install wget. Please install it manually.${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}wget installed successfully!${NC}"
+    fi
+}
+
+# Check for wget before proceeding
+check_wget
+
 # Function to create directory if it doesn't exist
 create_dir() {
     if [ ! -d "$1" ]; then
@@ -79,6 +112,48 @@ echo -e "4. Extract them to: ${GREEN}data/eval_datasets/logpub/${NC}"
 
 # Verify downloads
 echo -e "\n${GREEN}Verifying downloads...${NC}"
+
+# Function to verify file
+verify_file() {
+    local file=$1
+    if [ -f "$file" ]; then
+        # Check if file is not empty and is a valid CSV
+        if [ -s "$file" ] && head -n 1 "$file" | grep -q "," ; then
+            echo -e "${GREEN}✓ $(basename "$file") exists and appears valid${NC}"
+            return 0
+        else
+            echo -e "${RED}✗ $(basename "$file") exists but may be corrupted${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}✗ $(basename "$file") is missing${NC}"
+        return 1
+    fi
+}
+
+# Verify Loghub-2k datasets
+echo -e "\n${YELLOW}Verifying Loghub-2k datasets:${NC}"
+datasets=("Apache" "Hadoop" "Linux" "Zookeeper")
+all_files_ok=true
+
+for dataset in "${datasets[@]}"; do
+    echo -e "\n${YELLOW}Checking $dataset:${NC}"
+    structured_file="data/eval_datasets/loghub_2k/$dataset/$dataset.log_structured.csv"
+    templates_file="data/eval_datasets/loghub_2k/$dataset/$dataset.log_templates.csv"
+    
+    verify_file "$structured_file" || all_files_ok=false
+    verify_file "$templates_file" || all_files_ok=false
+done
+
+if [ "$all_files_ok" = true ]; then
+    echo -e "\n${GREEN}All Loghub-2k files were downloaded successfully!${NC}"
+else
+    echo -e "\n${RED}Some files are missing or corrupted. Please run the script again.${NC}"
+    exit 1
+fi
+
+# Run the Python verification for additional dataset checks
+echo -e "\n${YELLOW}Running detailed dataset verification:${NC}"
 python3 -c "
 from src.eval.datasets import DatasetLoader
 try:

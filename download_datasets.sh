@@ -80,27 +80,27 @@ echo -e "\n${GREEN}Downloading Loghub-2k datasets...${NC}"
 
 # Apache
 download_file "https://github.com/logpai/loghub/raw/master/Apache/Apache_2k.log_structured.csv" \
-    "data/eval_datasets/loghub_2k/Apache/Apache.log_structured.csv"
+    "data/eval_datasets/loghub_2k/Apache/Apache_2k.log_structured.csv"
 download_file "https://github.com/logpai/loghub/raw/master/Apache/Apache_2k.log_templates.csv" \
-    "data/eval_datasets/loghub_2k/Apache/Apache.log_templates.csv"
+    "data/eval_datasets/loghub_2k/Apache/Apache_2k.log_templates.csv"
 
 # Hadoop
 download_file "https://github.com/logpai/loghub/raw/master/Hadoop/Hadoop_2k.log_structured.csv" \
-    "data/eval_datasets/loghub_2k/Hadoop/Hadoop.log_structured.csv"
+    "data/eval_datasets/loghub_2k/Hadoop/Hadoop_2k.log_structured.csv"
 download_file "https://github.com/logpai/loghub/raw/master/Hadoop/Hadoop_2k.log_templates.csv" \
-    "data/eval_datasets/loghub_2k/Hadoop/Hadoop.log_templates.csv"
+    "data/eval_datasets/loghub_2k/Hadoop/Hadoop_2k.log_templates.csv"
 
 # Linux
 download_file "https://github.com/logpai/loghub/raw/master/Linux/Linux_2k.log_structured.csv" \
-    "data/eval_datasets/loghub_2k/Linux/Linux.log_structured.csv"
+    "data/eval_datasets/loghub_2k/Linux/Linux_2k.log_structured.csv"
 download_file "https://github.com/logpai/loghub/raw/master/Linux/Linux_2k.log_templates.csv" \
-    "data/eval_datasets/loghub_2k/Linux/Linux.log_templates.csv"
+    "data/eval_datasets/loghub_2k/Linux/Linux_2k.log_templates.csv"
 
 # Zookeeper
 download_file "https://github.com/logpai/loghub/raw/master/Zookeeper/Zookeeper_2k.log_structured.csv" \
-    "data/eval_datasets/loghub_2k/Zookeeper/Zookeeper.log_structured.csv"
+    "data/eval_datasets/loghub_2k/Zookeeper/Zookeeper_2k.log_structured.csv"
 download_file "https://github.com/logpai/loghub/raw/master/Zookeeper/Zookeeper_2k.log_templates.csv" \
-    "data/eval_datasets/loghub_2k/Zookeeper/Zookeeper.log_templates.csv"
+    "data/eval_datasets/loghub_2k/Zookeeper/Zookeeper_2k.log_templates.csv"
 
 # LogPub notice
 echo -e "\n${YELLOW}Note about LogPub datasets:${NC}"
@@ -109,6 +109,43 @@ echo -e "1. Visit ${GREEN}https://github.com/logpai/LogPub${NC}"
 echo -e "2. Fill out the registration form"
 echo -e "3. Download the benchmark datasets"
 echo -e "4. Extract them to: ${GREEN}data/eval_datasets/logpub/${NC}"
+
+# Replace with enhanced instructions
+echo -e "\n${YELLOW}=== LogPub Dataset Setup Instructions ===${NC}"
+echo -e "\nLogPub datasets require manual setup due to registration requirements:"
+
+echo -e "\n${GREEN}1. Registration Process:${NC}"
+echo -e "   - Visit ${GREEN}https://github.com/logpai/LogPub${NC}"
+echo -e "   - Click on 'Request for Access' or fill the Google Form"
+echo -e "   - Provide your information (name, organization, purpose)"
+echo -e "   - Wait for approval email (usually within 1-2 business days)"
+
+echo -e "\n${GREEN}2. Downloading Datasets:${NC}"
+echo -e "   - After approval, you'll receive download links"
+echo -e "   - Download the benchmark datasets (.zip files)"
+echo -e "   - Each system should have two files:"
+echo -e "     * {System}_structured.csv - Contains the raw logs"
+echo -e "     * {System}_templates.csv  - Contains the templates"
+
+echo -e "\n${GREEN}3. Setup Instructions:${NC}"
+echo -e "   - Extract the downloaded files to: ${GREEN}data/eval_datasets/logpub/${NC}"
+echo -e "   - Ensure the following directory structure:"
+echo -e "     data/eval_datasets/logpub/"
+echo -e "     ├── System1/"
+echo -e "     │   ├── System1_structured.csv"
+echo -e "     │   └── System1_templates.csv"
+echo -e "     ├── System2/"
+echo -e "     │   ├── System2_structured.csv"
+echo -e "     │   └── System2_templates.csv"
+echo -e "     └── ..."
+
+echo -e "\n${GREEN}4. Verification:${NC}"
+echo -e "   - After setup, you can verify the datasets using:"
+echo -e "     python3 -c 'from src.eval.datasets import DatasetLoader; loader = DatasetLoader(); print(loader.list_available_datasets())'"
+
+echo -e "\n${YELLOW}Note:${NC} LogPub datasets are used in research. Please cite their paper:"
+echo -e "   'LogPub: A Comprehensive Benchmark for Log Parsing Research'"
+echo -e "   Available at: https://arxiv.org/abs/2308.02022"
 
 # Verify downloads
 echo -e "\n${GREEN}Verifying downloads...${NC}"
@@ -138,8 +175,8 @@ all_files_ok=true
 
 for dataset in "${datasets[@]}"; do
     echo -e "\n${YELLOW}Checking $dataset:${NC}"
-    structured_file="data/eval_datasets/loghub_2k/$dataset/$dataset.log_structured.csv"
-    templates_file="data/eval_datasets/loghub_2k/$dataset/$dataset.log_templates.csv"
+    structured_file="data/eval_datasets/loghub_2k/$dataset/${dataset}_2k.log_structured.csv"
+    templates_file="data/eval_datasets/loghub_2k/$dataset/${dataset}_2k.log_templates.csv"
     
     verify_file "$structured_file" || all_files_ok=false
     verify_file "$templates_file" || all_files_ok=false

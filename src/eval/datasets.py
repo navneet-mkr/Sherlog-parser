@@ -2,11 +2,11 @@
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Any
+from typing import Dict, List, Set, Tuple, Any
 from dataclasses import dataclass, field
 import logging
 import pandas as pd
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,8 @@ class LogTemplate(BaseModel):
     frequency: int = Field(default=1)
     parameters: Dict[str, str] = Field(default_factory=dict)
 
-    @validator('template')
+    @field_validator('template')
+    @classmethod
     def template_not_empty(cls, v: str) -> str:
         """Validate template is not empty."""
         if not v.strip():
@@ -122,29 +123,31 @@ class DatasetLoader:
         except Exception as e:
             raise DatasetValidationError(f"Error reading {file_path}: {str(e)}")
     
-    def _load_structured_logs(self, file_path: Path) -> Tuple[List[str], Dict[int, Dict[str, str]]]:
+    def _load_structured_logs(self, file_path: Path) -> Tuple[List[str], Dict[int, Dict[str, str]], Dict[int, str]]:
         """Load structured logs from CSV file.
         
         Args:
             file_path: Path to *_structured.csv file.
             
         Returns:
-            Tuple of (raw_logs, parameters_dict)
+            Tuple of (raw_logs, parameters_dict, event_ids)
             
         Raises:
             DatasetValidationError: If file format is invalid
         """
         try:
             # Validate file
-            self._validate_csv_file(file_path, self.REQUIRED_COLUMNS['structured'])
+            required_columns = {'Content', 'EventId'}
+            self._validate_csv_file(file_path, required_columns)
             
             # Read data
             df = pd.read_csv(file_path)
             
-            # Extract raw logs
+            # Extract raw logs and event IDs
             raw_logs = df['Content'].tolist()
+            event_ids = df['EventId'].tolist()
             
-            # Extract parameters
+            # Extract parameters (if any)
             parameters = {}
             for idx, row in df.iterrows():
                 param_dict = {}
@@ -156,41 +159,42 @@ class DatasetLoader:
                             param_dict[f"param_{col.split('.')[-1]}"] = str(value)
                 parameters[idx] = param_dict
             
-            return raw_logs, parameters
+            return raw_logs, parameters, dict(enumerate(event_ids))
         
         except Exception as e:
             raise DatasetValidationError(f"Error loading structured logs: {str(e)}")
     
-    def _load_templates(self, file_path: Path) -> Dict[int, str]:
+    def _load_templates(self, file_path: Path) -> Dict[str, str]:
         """Load ground truth templates from CSV file.
         
         Args:
             file_path: Path to *_templates.csv file.
             
         Returns:
-            Dictionary mapping log_id to template
+            Dictionary mapping EventId to template
             
         Raises:
             DatasetValidationError: If file format is invalid
         """
         try:
             # Validate file
-            self._validate_csv_file(file_path, self.REQUIRED_COLUMNS['templates'])
+            required_columns = {'EventId', 'EventTemplate'}
+            self._validate_csv_file(file_path, required_columns)
             
             # Read data
             df = pd.read_csv(file_path)
             
-            # Convert to dictionary
-            templates = dict(enumerate(df['EventTemplate'].tolist()))
+            # Convert to dictionary mapping EventId to template
+            templates = dict(zip(df['EventId'], df['EventTemplate']))
             
             # Validate templates
             empty_templates = [
-                idx for idx, template in templates.items()
+                event_id for event_id, template in templates.items()
                 if not str(template).strip()
             ]
             if empty_templates:
                 raise DatasetValidationError(
-                    f"Empty templates found at indices: {empty_templates}"
+                    f"Empty templates found for EventIds: {empty_templates}"
                 )
             
             return templates
@@ -221,18 +225,27 @@ class DatasetLoader:
                 raise DatasetNotFoundError(f"System directory not found: {system_dir}")
             
             # Find required files
-            structured_file = next(system_dir.glob("*.log_structured.csv"), None)
-            template_file = next(system_dir.glob("*.log_templates.csv"), None)
+            structured_file = next(system_dir.glob("*_2k.log_structured.csv"), None)
+            template_file = next(system_dir.glob("*_2k.log_templates.csv"), None)
             
             if not structured_file or not template_file:
                 raise DatasetNotFoundError(
                     f"Required files not found in {system_dir}. "
-                    "Need *_structured.csv and *_templates.csv"
+                    "Need *_2k.log_structured.csv and *_2k.log_templates.csv"
                 )
             
             # Load data
-            raw_logs, parameters = self._load_structured_logs(structured_file)
-            templates = self._load_templates(template_file)
+            raw_logs, parameters, event_ids = self._load_structured_logs(structured_file)
+            event_templates = self._load_templates(template_file)
+            
+            # Map log IDs to templates using event IDs
+            templates = {}
+            for log_id, event_id in event_ids.items():
+                if event_id not in event_templates:
+                    raise DatasetValidationError(
+                        f"Missing template for EventId {event_id} in log {log_id}"
+                    )
+                templates[log_id] = event_templates[event_id]
             
             # Create dataset
             dataset = LogDataset(

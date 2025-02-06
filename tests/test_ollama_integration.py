@@ -74,7 +74,7 @@ def test_get_llm():
         top_p=0.9
     )
     
-    with patch('langchain_community.llms.Ollama') as mock_ollama:
+    with patch('pydantic_ai.models.openai.OpenAIModel') as mock_ollama:
         mock_ollama.return_value = Mock()
         
         llm_config = get_llm(config)

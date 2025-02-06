@@ -4,7 +4,6 @@ from typing import Optional, Dict, Union, Literal
 from pydantic import BaseModel, Field, ConfigDict, HttpUrl
 from pydantic_settings import BaseSettings
 from pathlib import Path
-from langchain.schema.language_model import BaseLanguageModel
 
 class ModelInfo(BaseModel):
     """Information about an Ollama model."""

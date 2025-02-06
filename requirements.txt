@@ -8,11 +8,6 @@ pydantic>=2.5.2
 pydantic-settings>=2.1.0
 pydantic-ai==0.0.22
 
-# LLM and embeddings
-langchain>=0.1.0
-langchain-community>=0.0.10
-langchain-openai>=0.0.8
-
 # API and services
 fastapi>=0.109.0
 uvicorn>=0.27.0

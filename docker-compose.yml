@@ -140,8 +140,6 @@ services:
     depends_on:
       dagster:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
     networks:
       - app_network
 

@@ -45,6 +45,7 @@ RUN uv pip install --system --no-cache-dir \
     sentence-transformers \
     pydantic \
     pydantic-settings \
+    pydantic-ai==0.0.22 \
     torch \
     psutil \
     requests \

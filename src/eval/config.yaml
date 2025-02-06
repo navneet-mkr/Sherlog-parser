@@ -1,0 +1,6 @@
+base_dir: /app/data/eval_datasets
+cache_dir: /app/data/eval_cache
+ollama_base_url: http://localhost:11434
+model_name: mistral
+similarity_threshold: 0.8
+batch_size: 1000 

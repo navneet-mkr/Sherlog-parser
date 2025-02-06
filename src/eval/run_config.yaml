@@ -1,0 +1,16 @@
+ops:
+  load_dataset:
+    config:
+      base_dir: data/eval_datasets
+      dataset_type: loghub_2k
+      system: Apache
+  parse_dataset:
+    config:
+      ollama_base_url: http://localhost:11434
+      model_name: mistral
+      similarity_threshold: 0.8
+      batch_size: 1000
+      cache_dir: data/eval_cache
+  evaluate_results:
+    config:
+      model_name: mistral 

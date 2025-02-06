@@ -125,21 +125,37 @@ services:
     build:
       context: .
       dockerfile: src/docker/Dockerfile.eval
+    ports:
+      - "3001:3000"  # Different port to avoid conflict with main Dagster
+      - "4001:4000"
     volumes:
       - .:/app
-      - eval_data:/app/data
-      - eval_cache:/app/data/eval_cache
-      - ./data/eval_datasets:/app/data/eval_datasets:ro  # Mount datasets as read-only
+      - ./data/eval_datasets:/data/eval_datasets
+      - ./data/eval_cache:/data/eval_cache
+      - dagster_eval_home:/data/dagster_home
+      - dagster_eval_tmp:/tmp/dagster
+      - ./src/docker/init-dagster.sh:/init-dagster.sh
     environment:
+      - DAGSTER_HOME=/data/dagster_home
       - PYTHONPATH=/app
-      - DAGSTER_HOME=/app/data
-      - DAGSTER_GRPC_HOST=dagster
+      - DAGSTER_GRPC_HOST=0.0.0.0
       - DAGSTER_GRPC_PORT=4000
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost}
-      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
-    depends_on:
-      dagster:
-        condition: service_healthy
+      - OLLAMA_HOST=http://localhost
+      - OLLAMA_PORT=11434
+    healthcheck:
+      test: 
+        - CMD-SHELL
+        - 'test -f /data/dagster_home/dagster.yaml && curl -f http://localhost:3000 || exit 1'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        rm -f /data/dagster_home/dagster.yaml
+        chmod +x /init-dagster.sh
+        exec /init-dagster.sh
     networks:
       - app_network
 
@@ -172,4 +188,6 @@ volumes:
   model_storage:
   ollama_models:
   eval_data:
-  eval_cache: 
+  eval_cache:
+  dagster_eval_home:
+  dagster_eval_tmp: 

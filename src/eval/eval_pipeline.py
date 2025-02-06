@@ -223,38 +223,10 @@ def evaluate_results(context, dataset: LogDataset,
         context.log.error(f"Failed to evaluate results: {str(e)}")
         raise
 
-@job(
-    config={
-        "base_dir": "data/eval_datasets",
-        "cache_dir": "data/eval_cache",
-        "ollama_base_url": "http://localhost:11434",
-        "model_name": "mistral",
-        "similarity_threshold": 0.8,
-        "batch_size": 1000
-    }
-)
+@job
 def evaluate_logparser_llm():
     """Main evaluation job for LogParser-LLM."""
-    # Load and evaluate each dataset
-    for dataset_type, systems in DEFAULT_TEST_DATASETS.items():
-        for system in systems:
-            # Load dataset
-            dataset = load_dataset.with_config({
-                "base_dir": "data/eval_datasets",
-                "dataset_type": dataset_type,
-                "system": system
-            })()
-            
-            # Parse logs
-            templates, inference_times = parse_dataset.with_config({
-                "ollama_base_url": "http://localhost:11434",
-                "model_name": "mistral",
-                "similarity_threshold": 0.8,
-                "batch_size": 1000,
-                "cache_dir": "data/eval_cache"
-            })(dataset)
-            
-            # Evaluate results
-            evaluate_results.with_config({
-                "model_name": "mistral"
-            })(dataset, templates, inference_times) 
+    # Load and evaluate single dataset
+    dataset = load_dataset()
+    templates, inference_times = parse_dataset(dataset)
+    evaluate_results(dataset, templates, inference_times) 

@@ -7,32 +7,17 @@ import json
 from pathlib import Path
 from dagster import DagsterInstance
 from src.core import log_processing_job
-from langchain_community.llms import Ollama
-from langchain.schema.language_model import BaseLanguageModel
-from typing import Optional, Dict, TypedDict, Literal, Union, Any, Tuple
+from typing import Optional, Dict, Literal, Any, Tuple, List
 from src.models.config import (
-    ModelInfo,
     LLMConfig,
     PipelineConfig,
     RunConfig,
-    AVAILABLE_MODELS,
     OllamaSettings
 )
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from pydantic import BaseModel
 
 # Type definitions
-class ModelInfo(TypedDict):
-    name: str
-    repo_id: str
-    filename: str
-    description: str
-    context_length: int
-    memory_required: str
-
-class LLMConfig(TypedDict):
-    llm: BaseLanguageModel
-    config: Union[ModelInfo, Dict[str, str]]
-
 ModelType = Literal["local", "api"]
 OpenAIModel = Literal["gpt-3.5-turbo", "gpt-4"]
 
@@ -120,36 +105,30 @@ def get_available_models() -> Dict[str, Dict[str, Any]]:
         return {}
 
 def get_llm(config: LLMConfig) -> Dict[str, Any]:
-    """Get LLM instance based on configuration."""
-    try:
-        base_url = get_ollama_url()
-        logger.info(f"Initializing Ollama LLM with base URL: {base_url}")
+    """Get basic model configuration for the pipeline.
+    
+    Args:
+        config: LLM configuration
         
-        llm = Ollama(
-            base_url=base_url,
-            model=config.model_id,
-            temperature=config.temperature,
-            num_predict=config.num_predict,
-            top_k=config.top_k,
-            top_p=config.top_p,
-            repeat_penalty=config.repeat_penalty
-        )
+    Returns:
+        Dictionary containing model configuration
+        
+    Raises:
+        RuntimeError: If configuration is invalid
+    """
+    try:
+        config_dict = config.model_dump()
+        logger.info(f"Created model configuration: {config_dict}")
         
         return {
-            "llm": llm,
-            "config": {
-                "name": config.model_id,
-                "description": AVAILABLE_MODELS.get(config.model_id, ModelInfo(
-                    name=config.model_id,
-                    model_id=config.model_id,
-                    description="Custom model"
-                )).description
-            }
+            "model_type": "local",
+            "model_path": None,  # Not needed for Ollama
+            "config": config_dict
         }
             
     except Exception as e:
-        logger.error(f"Error initializing Ollama model: {str(e)}")
-        raise RuntimeError(f"Failed to initialize model: {str(e)}")
+        logger.error(f"Error creating model configuration: {str(e)}")
+        raise RuntimeError(f"Failed to create model configuration: {str(e)}")
 
 def handle_model_selection() -> Optional[Dict[str, Any]]:
     """Handle model selection in the UI."""
@@ -215,17 +194,23 @@ def handle_model_selection() -> Optional[Dict[str, Any]]:
             )
         
         try:
+            # Create proper LLMConfig using the Pydantic model
             config = LLMConfig(
                 model_id=selected_model.split(":")[0],  # Remove :latest tag
                 temperature=temperature,
                 top_p=top_p,
-                top_k=top_k
+                top_k=top_k,
+                num_predict=2048,  # Using default from config
+                repeat_penalty=1.1  # Using default from config
             )
+            
             llm_config = get_llm(config)
             st.success("✅ Model is ready to use")
             return llm_config
+            
         except Exception as e:
             st.error(f"Failed to initialize model: {str(e)}")
+            logger.error(f"Model initialization error: {str(e)}", exc_info=True)
             return None
 
 def init_dagster() -> DagsterInstance:
@@ -534,7 +519,7 @@ def pull_model_with_progress(model_name: str, progress_container=st.sidebar) -> 
                 return False, latest_progress
                 
             show_download_error(download_container, model_name, "Failed to connect to Ollama")
-            return False, None
+            return False, latest_progress
             
     except Exception as e:
         logger.error(f"Failed to download model {model_name}: {str(e)}")

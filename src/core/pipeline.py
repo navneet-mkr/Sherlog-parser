@@ -2,82 +2,21 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional, Union, BinaryIO, Dict, Any
+from typing import List, Optional, Dict, Any
 
 from dagster import (
     job, op, In, Out, Nothing,
     DagsterType, TypeCheck,
-    Field as DagsterField, String, Int,
+    Field as DagsterField, String, Int, Bool,
     AssetMaterialization, MetadataValue,
     ResourceDefinition
 )
-import numpy as np
-from pydantic import BaseModel, Field
 
-from src.models import Settings, LogLine
-from src.models.clustering import ClusteringState, ClusteringParams
-from src.core.embeddings import EmbeddingGenerator
-from src.core.clustering import LogClusterer
-from src.core.errors import FileError, ParsingError, ClusteringError
+from src.models.log_parser import LogParserLLM
+from src.models.storage import DuckDBStorage, ParsedLog
+from src.models.ollama import create_ollama_analyzer
 
 logger = logging.getLogger(__name__)
-
-# Pydantic models for operation configurations
-class ReadLogConfig(BaseModel):
-    """Configuration for log file reading operation."""
-    encoding: str = Field(default="utf-8", description="File encoding")
-
-class EmbeddingConfig(BaseModel):
-    """Configuration for embedding generation operation."""
-    batch_size: int = Field(default=1000, description="Number of lines to process in each batch")
-
-class ClusteringConfig(BaseModel):
-    """Configuration for log clustering operation."""
-    n_clusters: int = Field(default=20, description="Number of clusters to generate")
-
-class AnalysisConfig(BaseModel):
-    """Configuration for pattern analysis operation."""
-    max_samples: int = Field(default=5, description="Maximum number of sample lines to show per cluster")
-
-# Pydantic models for intermediate data
-class EmbeddingData(BaseModel):
-    """Data structure for embedding generation results."""
-    embeddings: np.ndarray
-    original_lines: List[str]
-    
-    class Config:
-        arbitrary_types_allowed = True
-
-class ClusteringData(BaseModel):
-    """Data structure for clustering results."""
-    clustering_state: ClusteringState
-    original_lines: List[str]
-    
-    class Config:
-        arbitrary_types_allowed = True
-
-# Resource definitions
-class ChunkCounter:
-    def __init__(self):
-        self.current_chunk = 0
-    
-    def get_next_chunk(self) -> int:
-        chunk = self.current_chunk
-        self.current_chunk += 1
-        return chunk
-
-class ClustererResource:
-    def __init__(self):
-        self.clusterer = None
-    
-    def get_clusterer(self) -> Optional[LogClusterer]:
-        return self.clusterer
-    
-    def set_clusterer(self, clusterer: LogClusterer):
-        self.clusterer = clusterer
-
-chunk_counter = ResourceDefinition.hardcoded_resource(ChunkCounter())
-clusterer_resource = ResourceDefinition.hardcoded_resource(ClustererResource())
 
 # Custom Dagster types
 def is_valid_log_lines(_, value: List[str]) -> TypeCheck:
@@ -105,24 +44,16 @@ LogLines = DagsterType(
     ins={"file_path": In(String)},
     out=Out(LogLines),
     config_schema={
-        "encoding": DagsterField(String, default_value="utf-8", is_required=False, description="File encoding to use")
+        "encoding": DagsterField(String, default_value="utf-8", is_required=False)
     }
 )
 def read_log_file(context, file_path: str) -> List[str]:
-    """Read log lines from file.
-    
-    Args:
-        context: Dagster execution context
-        file_path: Path to the log file
-        
-    Returns:
-        List of log lines
-    """
+    """Read log lines from file."""
     try:
         encoding = context.op_config["encoding"]
         path = Path(file_path)
         if not path.exists():
-            raise FileError(f"File not found: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
             
         lines = path.read_text(encoding=encoding).splitlines()
         
@@ -142,232 +73,134 @@ def read_log_file(context, file_path: str) -> List[str]:
         
         return lines
     except Exception as e:
-        raise FileError(f"Failed to read file: {str(e)}")
+        context.log.error(f"Failed to read file: {str(e)}")
+        raise
 
 @op(
     ins={"log_lines": In(LogLines)},
     out=Out(dict),
     config_schema={
-        "batch_size": DagsterField(Int, default_value=1000, is_required=False, description="Number of lines to process in each batch")
+        "ollama_base_url": DagsterField(String, default_value="http://localhost:11434"),
+        "model_name": DagsterField(String, default_value="mistral"),
+        "similarity_threshold": DagsterField(float, default_value=0.8),
+        "batch_size": DagsterField(Int, default_value=1000)
     }
 )
-def generate_embeddings(context, log_lines: List[str]) -> Dict[str, Any]:
-    """Generate embeddings for log lines.
-    
-    Args:
-        context: Dagster execution context
-        log_lines: List of log lines
-        
-    Returns:
-        Dictionary with embeddings and metadata
-    """
+def parse_logs_llm(context, log_lines: List[str]) -> Dict[str, Any]:
+    """Parse logs using LogParser-LLM algorithm."""
     try:
+        # Create Ollama client
+        ollama_client = create_ollama_analyzer(
+            base_url=context.op_config["ollama_base_url"],
+            model_id=context.op_config["model_name"],
+            config={}
+        )
+        
+        # Initialize LogParser-LLM
+        parser = LogParserLLM(
+            ollama_client=ollama_client,
+            similarity_threshold=context.op_config["similarity_threshold"]
+        )
+        
+        # Process logs in batches
         batch_size = context.op_config["batch_size"]
-        settings = Settings()
-        embedding_gen = EmbeddingGenerator(settings)
+        parsed_logs = []
         
-        embeddings = []
-        
-        # Process in batches
         for i in range(0, len(log_lines), batch_size):
             batch = log_lines[i:i + batch_size]
-            batch_embeddings = embedding_gen.generate_embeddings(batch)
-            embeddings.extend(batch_embeddings)
-            
-            context.log.info(f"Generated embeddings for batch {i//batch_size + 1}")
-        
-        embeddings_array = np.array(embeddings)
-        
-        # Record asset materialization
-        context.log_event(
-            AssetMaterialization(
-                asset_key="embeddings",
-                description="Generated embeddings",
-                metadata={
-                    "shape": MetadataValue.text(str(embeddings_array.shape)),
-                    "memory_size": MetadataValue.int(embeddings_array.nbytes)
-                }
-            )
-        )
-        
-        return {
-            "embeddings": embeddings_array,
-            "original_lines": log_lines
-        }
-    except Exception as e:
-        raise ParsingError(f"Failed to generate embeddings: {str(e)}")
-
-@op(
-    ins={"embedding_data": In(dict)},
-    out=Out(dict),
-    config_schema={
-        "n_clusters": DagsterField(Int, default_value=20, is_required=False, description="Number of clusters to generate")
-    }
-)
-def cluster_logs(context, embedding_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Cluster log lines based on embeddings.
-    
-    Args:
-        context: Dagster execution context
-        embedding_data: Dictionary with embeddings and original lines
-        
-    Returns:
-        Dictionary with clustering results
-    """
-    try:
-        n_clusters = context.op_config["n_clusters"]
-        settings = Settings()
-        settings.model.n_clusters = n_clusters
-        clusterer = LogClusterer(settings)
-        
-        # Update clustering
-        clustering_state = clusterer.process_batch(
-            embedding_data["original_lines"],
-            embedding_data["embeddings"]
-        )
-        
-        # Record asset materialization
-        context.log_event(
-            AssetMaterialization(
-                asset_key="clusters",
-                description="Generated clusters",
-                metadata={
-                    "num_clusters": MetadataValue.int(
-                        len(clustering_state.clusters)
-                    ),
-                    "num_samples": MetadataValue.int(
-                        clustering_state.n_samples
+            for log_id, log_message in enumerate(batch, start=i):
+                template, parameters = parser.parse_log(log_message, log_id)
+                parsed_logs.append(
+                    ParsedLog(
+                        log_id=log_id,
+                        raw_log=log_message,
+                        log_template=template,
+                        parameters=parameters
                     )
+                )
+            
+            context.log.info(f"Processed batch {i//batch_size + 1}")
+        
+        # Get parser statistics
+        stats = parser.get_statistics()
+        
+        # Record asset materialization
+        context.log_event(
+            AssetMaterialization(
+                asset_key="parsed_logs",
+                description="Parsed log data",
+                metadata={
+                    "total_logs": MetadataValue.int(len(parsed_logs)),
+                    "total_templates": MetadataValue.int(stats["total_templates"]),
+                    "total_clusters": MetadataValue.int(stats["total_clusters"])
                 }
             )
         )
         
         return {
-            "clustering_state": clustering_state,
-            "original_lines": embedding_data["original_lines"]
+            "parsed_logs": parsed_logs,
+            "statistics": stats
         }
     except Exception as e:
-        raise ClusteringError(f"Failed to cluster logs: {str(e)}")
+        context.log.error(f"Failed to parse logs: {str(e)}")
+        raise
 
 @op(
-    ins={"cluster_data": In(dict)},
+    ins={"parsed_data": In(dict)},
     out=Out(Nothing),
     config_schema={
-        "max_samples": DagsterField(Int, default_value=5, is_required=False, description="Maximum number of sample lines to show per cluster")
+        "db_path": DagsterField(String, default_value=":memory:", is_required=False),
+        "persist_db": DagsterField(Bool, default_value=True, is_required=False)
     }
 )
-def analyze_patterns(context, cluster_data: Dict[str, Any]) -> None:
-    """Analyze patterns in clusters.
-    
-    Args:
-        context: Dagster execution context
-        cluster_data: Dictionary with clustering results
-    """
+def store_parsed_logs(context, parsed_data: Dict[str, Any]):
+    """Store parsed logs in DuckDB."""
     try:
-        max_samples = context.op_config["max_samples"]
-        clustering_state = cluster_data["clustering_state"]
-        
-        for cluster_id, cluster_info in clustering_state.clusters.items():
-            if cluster_info.pattern:
-                context.log.info(f"\nCluster {cluster_id}:")
-                context.log.info(f"Pattern: {cluster_info.pattern.pattern}")
-                context.log.info(f"Confidence: {cluster_info.pattern.confidence:.2%}")
-                context.log.info("Sample lines:")
-                for line in cluster_info.sample_lines[:max_samples]:
-                    context.log.info(f"  {line}")
-    except Exception as e:
-        raise ParsingError(f"Failed to analyze patterns: {str(e)}")
-
-# Define the pipeline
-@job(
-    description="Process log files to extract patterns and clusters"
-)
-def log_processing_pipeline():
-    """Define the complete log processing pipeline."""
-    # Read log file
-    log_lines = read_log_file()
-    
-    # Generate embeddings
-    embedding_data = generate_embeddings(log_lines)
-    
-    # Cluster logs
-    cluster_data = cluster_logs(embedding_data)
-    
-    # Analyze patterns
-    analyze_patterns(cluster_data)
-
-class LogPipeline:
-    """Handles the complete log processing pipeline."""
-    
-    def __init__(
-        self,
-        settings: Optional[Settings] = None
-    ):
-        """Initialize the pipeline.
-        
-        Args:
-            settings: Optional Settings instance
-        """
-        self.settings = settings or Settings()
-    
-    def process_file(self, file: Union[str, Path, BinaryIO]) -> Dict[str, Any]:
-        """Process a log file through the complete pipeline.
-        
-        Args:
-            file: Path to log file or file-like object
+        db_path = context.op_config["db_path"]
+        if not context.op_config["persist_db"]:
+            db_path = ":memory:"
             
-        Returns:
-            Dictionary containing processing results
-            
-        Raises:
-            FileError: If file cannot be processed
-        """
-        try:
-            # Handle file-like objects
-            if not isinstance(file, (str, Path)):
-                content = file.read()
-                if isinstance(content, bytes):
-                    content = content.decode('utf-8')
-                temp_path = Path('temp_upload.log')
-                temp_path.write_text(content)
-                file_path = str(temp_path)
-            else:
-                file_path = str(file)
-            
-            # Execute the pipeline
-            result = log_processing_pipeline.execute_in_process(
-                run_config={
-                    "ops": {
-                        "read_log_file": {
-                            "config": {"encoding": "utf-8"},
-                            "inputs": {"file_path": file_path}
-                        },
-                        "generate_embeddings": {
-                            "config": {"batch_size": self.settings.model.batch_size}
-                        },
-                        "cluster_logs": {
-                            "config": {"n_clusters": self.settings.model.n_clusters}
-                        },
-                        "analyze_patterns": {
-                            "config": {"max_samples": 5}
-                        }
-                    }
+        # Initialize DuckDB storage
+        storage = DuckDBStorage(db_path=db_path)
+        
+        # Store parsed logs
+        parsed_logs = parsed_data["parsed_logs"]
+        storage.insert_parsed_logs(parsed_logs)
+        
+        # Get and log template statistics
+        template_stats = storage.get_template_statistics()
+        
+        context.log.info(
+            f"Stored {len(parsed_logs)} logs with "
+            f"{len(template_stats)} unique templates"
+        )
+        
+        # Record asset materialization
+        context.log_event(
+            AssetMaterialization(
+                asset_key="duckdb_storage",
+                description=f"DuckDB storage at {db_path}",
+                metadata={
+                    "total_logs": MetadataValue.int(len(parsed_logs)),
+                    "unique_templates": MetadataValue.int(len(template_stats)),
+                    "persistent": MetadataValue.bool(context.op_config["persist_db"])
                 }
             )
-            
-            # Clean up temporary file
-            if not isinstance(file, (str, Path)):
-                temp_path.unlink()
-            
-            if result.success:
-                # Get the clustering state from the result
-                cluster_data = result.output_for_node("cluster_logs")
-                return cluster_data["clustering_state"]
-            else:
-                raise FileError(
-                    "Pipeline execution failed",
-                    details={"errors": str(result.failure_data)}
-                )
-                
-        except Exception as e:
-            raise FileError(f"Failed to process file: {str(e)}") 
+        )
+        
+        storage.close()
+    except Exception as e:
+        context.log.error(f"Failed to store parsed logs: {str(e)}")
+        raise
+
+@job
+def log_parsing_pipeline():
+    """Main log parsing pipeline using LogParser-LLM."""
+    # Read logs
+    log_lines = read_log_file()
+    
+    # Parse logs using LogParser-LLM
+    parsed_data = parse_logs_llm(log_lines)
+    
+    # Store results in DuckDB
+    store_parsed_logs(parsed_data) 

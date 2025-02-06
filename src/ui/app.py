@@ -52,14 +52,22 @@ DATA_DIR: Path = Path("/data/logs")
 MODELS_DIR: Path = Path("/data/models")
 
 # Initialize Ollama settings
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost").rstrip('/')  # Remove trailing slash if present
+OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
+OLLAMA_BASE_URL = f"{OLLAMA_HOST}:{OLLAMA_PORT}"
+
 OLLAMA_SETTINGS = OllamaSettings(
-    host=os.getenv("OLLAMA_HOST", "http://localhost"),
-    port=int(os.getenv("OLLAMA_PORT", "11434"))
+    host=OLLAMA_HOST,
+    port=OLLAMA_PORT
 )
 
 class OllamaConnectionError(Exception):
     """Custom exception for Ollama connection issues."""
     pass
+
+def get_ollama_url() -> str:
+    """Get the full Ollama API URL."""
+    return OLLAMA_BASE_URL
 
 @retry(
     retry=retry_if_exception_type(requests.exceptions.RequestException),
@@ -67,22 +75,19 @@ class OllamaConnectionError(Exception):
     stop=stop_after_attempt(5)
 )
 def check_ollama_connection() -> bool:
-    """Check if Ollama service is accessible with retry logic.
-    
-    Returns:
-        bool: True if connection successful, False otherwise
-        
-    Raises:
-        OllamaConnectionError: If connection fails after retries
-    """
+    """Check if Ollama service is accessible with retry logic."""
     try:
         response = requests.get(
-            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags",
+            f"{get_ollama_url()}/api/tags",
             timeout=5
         )
-        return response.status_code == 200
+        if response.status_code == 200:
+            logger.info(f"Successfully connected to Ollama at {get_ollama_url()}")
+            return True
+        logger.warning(f"Ollama returned status code {response.status_code}")
+        return False
     except requests.exceptions.RequestException as e:
-        logger.warning(f"Failed to connect to Ollama: {str(e)}")
+        logger.warning(f"Failed to connect to Ollama at {get_ollama_url()}: {str(e)}")
         raise OllamaConnectionError(f"Failed to connect to Ollama: {str(e)}")
 
 def show_connection_error(error_msg: str, container=st):
@@ -99,48 +104,26 @@ def show_connection_error(error_msg: str, container=st):
     The application will automatically retry connecting...
     """)
 
-def get_available_models() -> Dict[str, ModelInfo]:
+def get_available_models() -> Dict[str, Dict[str, Any]]:
     """Get list of available models from Ollama server."""
     try:
-        response = requests.get(f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags")
+        response = requests.get(f"{get_ollama_url()}/api/tags")
         if response.status_code == 200:
-            available_models = response.json().get("models", [])
+            models_data = response.json()
+            logger.info(f"Received models data: {json.dumps(models_data, indent=2)}")
             return {
-                model["name"]: ModelInfo(
-                    name=model["name"],
-                    model_id=model["name"],
-                    description=AVAILABLE_MODELS.get(model["name"], ModelInfo(
-                        name=model["name"],
-                        model_id=model["name"],
-                        description="No description available"
-                    )).description,
-                    context_length=AVAILABLE_MODELS.get(model["name"], ModelInfo(
-                        name=model["name"],
-                        model_id=model["name"],
-                        description="No description available"
-                    )).context_length
-                )
-                for model in available_models
-                if not model["name"].endswith(":latest")  # Filter out latest tags
+                model["name"]: model  # Keep the full model info
+                for model in models_data.get("models", [])
             }
     except Exception as e:
         logger.error(f"Failed to fetch models from Ollama: {str(e)}")
-        return AVAILABLE_MODELS
+        return {}
 
 def get_llm(config: LLMConfig) -> Dict[str, Any]:
-    """Get LLM instance based on configuration.
-    
-    Args:
-        config: LLM configuration
-        
-    Returns:
-        Dictionary with LLM instance and configuration
-        
-    Raises:
-        RuntimeError: If model loading fails
-    """
+    """Get LLM instance based on configuration."""
     try:
-        base_url = f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}"
+        base_url = get_ollama_url()
+        logger.info(f"Initializing Ollama LLM with base URL: {base_url}")
         
         llm = Ollama(
             base_url=base_url,
@@ -179,17 +162,29 @@ def handle_model_selection() -> Optional[Dict[str, Any]]:
         st.error("❌ No models available. Please check if Ollama service is running.")
         return None
     
+    # Create a display name for each model
+    model_display = {
+        model_id: f"{info['name']} ({info.get('details', {}).get('parameter_size', 'Unknown')})"
+        for model_id, info in models.items()
+    }
+    
     selected_model = st.selectbox(
         "Select Model",
-        list(models.keys()),
-        format_func=lambda x: models[x].name,
+        options=list(models.keys()),
+        format_func=lambda x: model_display.get(x, x),
         help="Choose a model to use for log analysis"
     )
     
     if selected_model:
         model_info = models[selected_model]
-        st.markdown(f"**Description**: {model_info.description}")
-        st.markdown(f"**Context Length**: {model_info.context_length} tokens")
+        st.markdown(f"""
+        **Model Information**:
+        - Size: {format_size(model_info.get('size', 0))}
+        - Format: {model_info.get('details', {}).get('format', 'Unknown')}
+        - Family: {model_info.get('details', {}).get('family', 'Unknown')}
+        - Parameters: {model_info.get('details', {}).get('parameter_size', 'Unknown')}
+        - Quantization: {model_info.get('details', {}).get('quantization_level', 'Unknown')}
+        """)
         
         # Advanced settings in expander
         with st.expander("Advanced Settings"):
@@ -221,7 +216,7 @@ def handle_model_selection() -> Optional[Dict[str, Any]]:
         
         try:
             config = LLMConfig(
-                model_id=selected_model,
+                model_id=selected_model.split(":")[0],  # Remove :latest tag
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k
@@ -439,7 +434,7 @@ def pull_model_with_progress(model_name: str, progress_container=st.sidebar) -> 
             downloading_started = False
             
             response = requests.post(
-                f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/pull",
+                f"{get_ollama_url()}/api/pull",
                 json={"model": model_name, "stream": True},
                 stream=True
             )
@@ -563,7 +558,7 @@ def delete_model(model_id: str) -> bool:
     """
     try:
         response = requests.delete(
-            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/delete",
+            f"{get_ollama_url()}/api/delete",
             json={"name": model_id}
         )
         return response.status_code == 200
@@ -582,7 +577,7 @@ def get_model_details(model_id: str) -> Optional[Dict]:
     """
     try:
         response = requests.post(
-            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/show",
+            f"{get_ollama_url()}/api/show",
             json={"name": model_id}
         )
         if response.status_code == 200:
@@ -620,7 +615,7 @@ def manage_models():
         for model_id, info in current_models.items():
             col1, col2 = st.sidebar.columns([3, 1])
             with col1:
-                st.markdown(f"**{info.name}**")
+                st.markdown(f"**{info['name']}**")
                 
                 # Show model details in expander
                 with st.expander("Details"):
@@ -638,19 +633,22 @@ def manage_models():
 def check_ollama_status() -> Dict[str, Any]:
     """Check Ollama service status with improved error handling."""
     try:
+        logger.info(f"Checking Ollama status at {get_ollama_url()}")
         # First check basic connectivity
         try:
             is_connected = check_ollama_connection()
             if not is_connected:
+                logger.warning("Ollama service is not responding")
                 return {
                     "is_ready": False,
-                    "message": "Ollama service is not responding",
+                    "message": f"Ollama service is not responding at {get_ollama_url()}",
                     "models_available": [],
                     "is_downloading": False,
                     "download_status": {},
                     "connection_error": True
                 }
         except OllamaConnectionError as e:
+            logger.error(f"Ollama connection error: {str(e)}")
             show_connection_error(str(e))
             return {
                 "is_ready": False,
@@ -662,12 +660,10 @@ def check_ollama_status() -> Dict[str, Any]:
             }
 
         # Get available models
-        response = requests.get(
-            f"{OLLAMA_SETTINGS.host}:{OLLAMA_SETTINGS.port}/api/tags",
-            timeout=5
-        )
+        response = requests.get(f"{get_ollama_url()}/api/tags", timeout=5)
         
         if response.status_code != 200:
+            logger.error(f"Unexpected response from Ollama: {response.status_code}")
             show_connection_error("Ollama service returned unexpected response")
             return {
                 "is_ready": False,
@@ -678,11 +674,16 @@ def check_ollama_status() -> Dict[str, Any]:
                 "connection_error": True
             }
         
-        models_data = response.json().get("models", [])
-        available_models = [m["name"] for m in models_data if not m["name"].endswith(":latest")]
+        # Log the full response for debugging
+        response_data = response.json()
+        logger.info(f"Ollama response: {json.dumps(response_data, indent=2)}")
+        
+        models_data = response_data.get("models", [])
+        available_models = [m["name"] for m in models_data]  # Don't filter out :latest tags
         
         # If we have any models, we're ready
         if available_models:
+            logger.info(f"Found available models: {available_models}")
             return {
                 "is_ready": True,
                 "message": "Ollama is ready!",
@@ -693,6 +694,7 @@ def check_ollama_status() -> Dict[str, Any]:
             }
         
         # No models available - return status indicating need for model selection
+        logger.info("No models found, showing model selection screen")
         return {
             "is_ready": False,
             "message": "No models available. Please select a model to download.",

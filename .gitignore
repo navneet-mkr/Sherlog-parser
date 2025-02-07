@@ -104,6 +104,16 @@ Thumbs.db
 htmlcov/
 .tox/
 
+# Evaluation results and temporary files
+/eval_results/
+/eval_results/**
+/tmp/
+/tmp/**
+tmp*/
+/tmp*/
+/cache/
+/cache/**
+
 # Misc
 .local/
 *.bak

@@ -2,6 +2,7 @@
 
 import time
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
@@ -16,7 +17,7 @@ from dagster import (
 from src.eval.datasets import DatasetLoader, LogDataset, DEFAULT_TEST_DATASETS
 from src.eval.metrics import evaluate_parser_output, EvaluationMetrics
 from src.models.log_parser import LogParserLLM
-from src.models.ollama import create_ollama_analyzer
+from src.models.ollama import create_ollama_analyzer, VariableType
 
 # Custom Dagster types
 def is_valid_dataset(_, value: LogDataset) -> bool:
@@ -223,10 +224,89 @@ def evaluate_results(context, dataset: LogDataset,
         context.log.error(f"Failed to evaluate results: {str(e)}")
         raise
 
+@op(
+    ins={
+        "dataset": In(LogDatasetType),
+        "templates": In(dict),
+        "inference_times": In(list)
+    },
+    config_schema={
+        "output_dir": String,
+        "model_name": String
+    },
+    out=Out(Nothing)
+)
+def generate_template_file(context, dataset: LogDataset,
+                         templates: Dict[int, str],
+                         inference_times: List[float]) -> None:
+    """Generate a template file for debugging purposes."""
+    try:
+        output_dir = Path(context.op_config["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create template file
+        template_file = output_dir / f"{dataset.name}_{context.op_config['model_name']}_templates.csv"
+        
+        # Convert typed variables to simple <*> format
+        var_pattern = r'<(' + '|'.join(vtype.value for vtype in VariableType) + r')>'
+        simplified_templates = {
+            log_id: re.sub(var_pattern, '<*>', template)
+            for log_id, template in templates.items()
+        }
+        
+        # Group logs by template
+        template_groups = {}
+        for log_id, template in simplified_templates.items():
+            if template not in template_groups:
+                template_groups[template] = []
+            template_groups[template].append(log_id)
+        
+        # Write in the same format as ground truth template file
+        with open(template_file, 'w') as f:
+            f.write("EventId,EventTemplate\n")
+            for i, (template, log_ids) in enumerate(template_groups.items(), 1):
+                event_id = f"E{i}"
+                f.write(f"{event_id},{template}\n")
+        
+        # Also generate a detailed debug file
+        debug_file = output_dir / f"{dataset.name}_{context.op_config['model_name']}_debug.txt"
+        with open(debug_file, 'w') as f:
+            f.write(f"# Generated templates for {dataset.name} using {context.op_config['model_name']}\n")
+            f.write(f"# Total logs: {len(dataset.raw_logs)}\n")
+            f.write(f"# Unique templates: {len(template_groups)}\n\n")
+            
+            for template, log_ids in template_groups.items():
+                f.write(f"Template: {template}\n")
+                f.write(f"Count: {len(log_ids)}\n")
+                f.write("Example logs:\n")
+                for log_id in log_ids[:5]:
+                    f.write(f"  {dataset.raw_logs[log_id]}\n")
+                f.write("\n")
+        
+        context.log.info(f"Generated template files at {template_file} and {debug_file}")
+        
+        # Record asset materialization
+        context.log_event(
+            AssetMaterialization(
+                asset_key=f"template_file_{dataset.name}_{context.op_config['model_name']}",
+                description=f"Generated template files for {dataset.name}",
+                metadata={
+                    "template_file": MetadataValue.path(str(template_file)),
+                    "debug_file": MetadataValue.path(str(debug_file)),
+                    "total_templates": MetadataValue.int(len(template_groups)),
+                    "total_logs": MetadataValue.int(len(dataset.raw_logs))
+                }
+            )
+        )
+    except Exception as e:
+        context.log.error(f"Failed to generate template file: {str(e)}")
+        raise
+
 @job
 def evaluate_logparser_llm():
     """Main evaluation job for LogParser-LLM."""
     # Load and evaluate single dataset
     dataset = load_dataset()
     templates, inference_times = parse_dataset(dataset)
-    evaluate_results(dataset, templates, inference_times) 
+    evaluate_results(dataset, templates, inference_times)
+    generate_template_file(dataset, templates, inference_times) 

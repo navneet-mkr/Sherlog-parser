@@ -186,7 +186,7 @@ The evaluation pipeline can be configured through Dagster. Key parameters:
 config = {
     "base_dir": "/app/data/eval_datasets",  # Dataset directory
     "cache_dir": "/app/data/eval_cache",    # Cache directory
-    "ollama_base_url": "http://localhost:11434",
+    "ollama_base_url": "http://localhost:11434/v1",
     "model_name": "mistral",                # Ollama model to use
     "similarity_threshold": 0.8,            # Template matching threshold
     "batch_size": 1000                      # Batch size for processing

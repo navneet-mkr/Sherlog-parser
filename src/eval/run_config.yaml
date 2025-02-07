@@ -13,4 +13,8 @@ ops:
       cache_dir: data/eval_cache
   evaluate_results:
     config:
+      model_name: mistral
+  generate_template_file:
+    config:
+      output_dir: eval_results
       model_name: mistral 

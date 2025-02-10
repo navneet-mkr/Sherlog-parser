@@ -94,7 +94,7 @@ def load_dataset(context) -> LogDataset:
     out={"templates": Out(dict), "inference_times": Out(list)}
 )
 def parse_dataset(context, dataset: LogDataset) -> Tuple[Dict[int, str], List[float]]:
-    """Parse logs in dataset using LogParser-LLM."""
+    """Parse logs in dataset using specified model."""
     try:
         # Check cache first
         cache_dir = Path(context.op_config["cache_dir"])
@@ -134,7 +134,7 @@ def parse_dataset(context, dataset: LogDataset) -> Tuple[Dict[int, str], List[fl
                 templates[log_id] = template
                 inference_times.append(inference_time)
                 
-            context.log.info(f"Processed batch {i//batch_size + 1}")
+            context.log.info(f"Processed batch {i//batch_size + 1} with {context.op_config['model_name']}")
         
         # Cache results
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -146,7 +146,7 @@ def parse_dataset(context, dataset: LogDataset) -> Tuple[Dict[int, str], List[fl
         
         return templates, inference_times
     except Exception as e:
-        context.log.error(f"Failed to parse dataset: {str(e)}")
+        context.log.error(f"Failed to parse dataset with {context.op_config['model_name']}: {str(e)}")
         raise
 
 @op(
@@ -163,7 +163,7 @@ def parse_dataset(context, dataset: LogDataset) -> Tuple[Dict[int, str], List[fl
 def evaluate_results(context, dataset: LogDataset, 
                     templates: Dict[int, str],
                     inference_times: List[float]) -> EvaluationMetrics:
-    """Evaluate parsing results using all metrics."""
+    """Evaluate parsing results for specified model."""
     try:
         metrics = evaluate_parser_output(
             ground_truth_templates=dataset.ground_truth_templates,
@@ -173,13 +173,11 @@ def evaluate_results(context, dataset: LogDataset,
         )
         
         # Log metrics
-        context.log.info(f"Evaluation results for {dataset.name}:")
+        context.log.info(f"Evaluation results for {dataset.name} using {context.op_config['model_name']}:")
         context.log.info(f"  Grouping Accuracy (GA): {metrics.grouping_accuracy:.4f}")
         context.log.info(f"  Parsing Accuracy (PA): {metrics.parsing_accuracy:.4f}")
         context.log.info(f"  F1 Grouping Accuracy (FGA): {metrics.f1_grouping_accuracy:.4f}")
         context.log.info(f"  F1 Template Accuracy (FTA): {metrics.f1_template_accuracy:.4f}")
-        context.log.info(f"  Grouping Granularity Distance (GGD): {metrics.grouping_granularity_distance:.4f}")
-        context.log.info(f"  Parsing Granularity Distance (PGD): {metrics.parsing_granularity_distance:.4f}")
         context.log.info(f"  Average Inference Time: {metrics.avg_inference_time_ms:.2f}ms")
         
         # Record asset materialization with markdown table
@@ -192,24 +190,20 @@ def evaluate_results(context, dataset: LogDataset,
         | Unique Templates | {metrics.unique_templates} |
         | Grouping Accuracy (GA) | {metrics.grouping_accuracy:.4f} |
         | Parsing Accuracy (PA) | {metrics.parsing_accuracy:.4f} |
-        | F1 Grouping Accuracy (FGA) | {metrics.f1_grouping_accuracy:.4f} |
-        | F1 Template Accuracy (FTA) | {metrics.f1_template_accuracy:.4f} |
-        | Grouping Granularity Distance (GGD) | {metrics.grouping_granularity_distance:.4f} |
-        | Parsing Granularity Distance (PGD) | {metrics.parsing_granularity_distance:.4f} |
+        | F1 Grouping Accuracy (FGA): {metrics.f1_grouping_accuracy:.4f} |
+        | F1 Template Accuracy (FTA): {metrics.f1_template_accuracy:.4f} |
         | Average Inference Time (ms) | {metrics.avg_inference_time_ms:.2f} |
         """
         
         context.log_event(
             AssetMaterialization(
                 asset_key=f"metrics_{dataset.name}_{metrics.model_name}",
-                description=f"Evaluation metrics for {dataset.name}",
+                description=f"Evaluation metrics for {dataset.name} using {metrics.model_name}",
                 metadata={
                     "grouping_accuracy": MetadataValue.float(metrics.grouping_accuracy),
                     "parsing_accuracy": MetadataValue.float(metrics.parsing_accuracy),
                     "f1_grouping_accuracy": MetadataValue.float(metrics.f1_grouping_accuracy),
                     "f1_template_accuracy": MetadataValue.float(metrics.f1_template_accuracy),
-                    "grouping_granularity_distance": MetadataValue.float(metrics.grouping_granularity_distance),
-                    "parsing_granularity_distance": MetadataValue.float(metrics.parsing_granularity_distance),
                     "avg_inference_time_ms": MetadataValue.float(metrics.avg_inference_time_ms),
                     "total_logs": MetadataValue.int(metrics.total_logs),
                     "unique_templates": MetadataValue.int(metrics.unique_templates),
@@ -221,7 +215,7 @@ def evaluate_results(context, dataset: LogDataset,
         
         return metrics
     except Exception as e:
-        context.log.error(f"Failed to evaluate results: {str(e)}")
+        context.log.error(f"Failed to evaluate results for {context.op_config['model_name']}: {str(e)}")
         raise
 
 @op(
@@ -239,13 +233,13 @@ def evaluate_results(context, dataset: LogDataset,
 def generate_template_file(context, dataset: LogDataset,
                          templates: Dict[int, str],
                          inference_times: List[float]) -> None:
-    """Generate a template file for debugging purposes."""
+    """Generate template file for specified model."""
     try:
         output_dir = Path(context.op_config["output_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create template file
         template_file = output_dir / f"{dataset.name}_{context.op_config['model_name']}_templates.csv"
+        debug_file = output_dir / f"{dataset.name}_{context.op_config['model_name']}_debug.txt"
         
         # Convert typed variables to simple <*> format
         var_pattern = r'<(' + '|'.join(vtype.value for vtype in VariableType) + r')>'
@@ -261,15 +255,14 @@ def generate_template_file(context, dataset: LogDataset,
                 template_groups[template] = []
             template_groups[template].append(log_id)
         
-        # Write in the same format as ground truth template file
+        # Write template file
         with open(template_file, 'w') as f:
             f.write("EventId,EventTemplate\n")
             for i, (template, log_ids) in enumerate(template_groups.items(), 1):
                 event_id = f"E{i}"
                 f.write(f"{event_id},{template}\n")
         
-        # Also generate a detailed debug file
-        debug_file = output_dir / f"{dataset.name}_{context.op_config['model_name']}_debug.txt"
+        # Write debug file
         with open(debug_file, 'w') as f:
             f.write(f"# Generated templates for {dataset.name} using {context.op_config['model_name']}\n")
             f.write(f"# Total logs: {len(dataset.raw_logs)}\n")
@@ -283,13 +276,13 @@ def generate_template_file(context, dataset: LogDataset,
                     f.write(f"  {dataset.raw_logs[log_id]}\n")
                 f.write("\n")
         
-        context.log.info(f"Generated template files at {template_file} and {debug_file}")
+        context.log.info(f"Generated template files for {context.op_config['model_name']} at {template_file} and {debug_file}")
         
         # Record asset materialization
         context.log_event(
             AssetMaterialization(
                 asset_key=f"template_file_{dataset.name}_{context.op_config['model_name']}",
-                description=f"Generated template files for {dataset.name}",
+                description=f"Generated template files for {dataset.name} using {context.op_config['model_name']}",
                 metadata={
                     "template_file": MetadataValue.path(str(template_file)),
                     "debug_file": MetadataValue.path(str(debug_file)),
@@ -299,14 +292,21 @@ def generate_template_file(context, dataset: LogDataset,
             )
         )
     except Exception as e:
-        context.log.error(f"Failed to generate template file: {str(e)}")
+        context.log.error(f"Failed to generate template file for {context.op_config['model_name']}: {str(e)}")
         raise
 
 @job
 def evaluate_logparser_llm():
     """Main evaluation job for LogParser-LLM."""
-    # Load and evaluate single dataset
+    # Load dataset once
     dataset = load_dataset()
-    templates, inference_times = parse_dataset(dataset)
-    evaluate_results(dataset, templates, inference_times)
-    generate_template_file(dataset, templates, inference_times) 
+    
+    # Evaluate with Qwen
+    templates_qwen, inference_times_qwen = parse_dataset.alias("parse_dataset_qwen")(dataset)
+    evaluate_results.alias("evaluate_results_qwen")(dataset, templates_qwen, inference_times_qwen)
+    generate_template_file.alias("generate_template_file_qwen")(dataset, templates_qwen, inference_times_qwen)
+    
+    # Evaluate with Mistral
+    templates_mistral, inference_times_mistral = parse_dataset.alias("parse_dataset_mistral")(dataset)
+    evaluate_results.alias("evaluate_results_mistral")(dataset, templates_mistral, inference_times_mistral)
+    generate_template_file.alias("generate_template_file_mistral")(dataset, templates_mistral, inference_times_mistral) 

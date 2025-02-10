@@ -4,17 +4,35 @@ ops:
       base_dir: data/eval_datasets
       dataset_type: loghub_2k
       system: Apache
-  parse_dataset:
+
+  # Qwen evaluation configuration
+  parse_dataset_qwen:
+    config:
+      ollama_base_url: http://localhost:11434
+      model_name: qwen2.5-coder:7b
+      similarity_threshold: 0.8
+      batch_size: 1000
+      cache_dir: data/eval_cache
+  evaluate_results_qwen:
+    config:
+      model_name: qwen2.5-coder:7b
+  generate_template_file_qwen:
+    config:
+      output_dir: eval_results
+      model_name: qwen2.5-coder:7b
+
+  # Mistral evaluation configuration  
+  parse_dataset_mistral:
     config:
       ollama_base_url: http://localhost:11434
       model_name: mistral
       similarity_threshold: 0.8
       batch_size: 1000
       cache_dir: data/eval_cache
-  evaluate_results:
+  evaluate_results_mistral:
     config:
       model_name: mistral
-  generate_template_file:
+  generate_template_file_mistral:
     config:
       output_dir: eval_results
       model_name: mistral 

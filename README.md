@@ -42,6 +42,19 @@ We provide a comprehensive evaluation framework to assess LogParser-LLM's perfor
 # Access results at http://localhost:8502
 ```
 
+### Important Update (March 2024)
+
+The evaluation framework has been updated to use the latest Pathway version (>=0.7.0). Key changes include:
+- Integration with Pathway's core package (no separate xpacks required)
+- Improved vector similarity search
+- Enhanced streaming capabilities
+- Better memory management
+
+If you're upgrading from an older version:
+1. Update your dependencies: `pip install -r requirements.txt`
+2. Clear the cache: `rm -rf cache/eval/*`
+3. Restart the evaluation service: `docker compose restart evaluation`
+
 The framework:
 - Uses Loghub-2k and LogPub benchmark datasets
 - Calculates metrics from the LogParser-LLM paper

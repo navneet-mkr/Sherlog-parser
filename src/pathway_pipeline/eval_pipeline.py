@@ -9,9 +9,9 @@ from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
 
 import pathway as pw
-from pathway.stdlib.indexing import default_vector_document_index
-from pathway.xpacks.llm import embedders
-from pathway.xpacks.llm.llms import LiteLLMChat
+from pathway.stdlib.ml.index import Index
+from pathway.stdlib.ml.embedding import SentenceTransformerEmbedder
+from pathway.stdlib.llm import LiteLLMChat
 
 from src.eval.datasets import DatasetLoader, LogDataset
 from src.eval.metrics import evaluate_parser_output, EvaluationMetrics
@@ -40,7 +40,7 @@ class EvaluationPipeline:
         self.batch_size = batch_size
         
         # Initialize embedder
-        self.embedder = embedders.SentenceTransformerEmbedder(
+        self.embedder = SentenceTransformerEmbedder(
             embedding_model,
             call_kwargs={"show_progress_bar": False}
         )
@@ -109,7 +109,8 @@ Log: "2024-02-07 10:15:30 ERROR Connection failed from 192.168.1.100"
         })
         self.templates = pw.debug.table_from_pandas(template_df)
         
-        self.template_index = default_vector_document_index(
+        # Create vector index using new API
+        self.template_index = Index(
             self.templates.template,
             self.templates,
             embedder=self.embedder,
@@ -121,9 +122,9 @@ Log: "2024-02-07 10:15:30 ERROR Connection failed from 192.168.1.100"
         
     def _process_logs(self) -> pw.Table:
         """Process logs and generate templates."""
-        # First try template matching
+        # First try template matching with new API
         logs_with_matches = self.logs.join(
-            self.template_index.get_nearest_items(
+            self.template_index.query(
                 self.logs.content,
                 k=1,
                 distance_threshold=self.similarity_threshold

@@ -12,7 +12,7 @@ services:
       - ./output:/output
       - ./cache:/cache
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=mistral
       - LOG_LEVEL=INFO
       - RUST_LOG=info
@@ -20,6 +20,7 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+        optional: true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 10s
@@ -30,6 +31,8 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    profiles:
+      - with-ollama
     ports:
       - "11434:11434"
     volumes:
@@ -60,7 +63,7 @@ services:
       - ./output:/output
       - ./cache:/cache
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=mistral
       - LOG_LEVEL=INFO
       - RUST_LOG=info
@@ -68,6 +71,7 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+        optional: true
     networks:
       - app-network
 
@@ -80,7 +84,7 @@ services:
       - ./output:/output
       - ./cache:/cache
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=mistral
       - LOG_LEVEL=INFO
       - RUST_LOG=info
@@ -88,6 +92,7 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+        optional: true
     profiles:
       - test
     networks:

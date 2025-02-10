@@ -5,9 +5,7 @@ A powerful, intelligent log parsing and analysis tool that leverages Large Langu
 ## 🚀 Quick Start (2 minutes)
 
 ```bash
-# Clone and start with default settings (using Ollama container)
-git clone https://github.com/yourusername/log-parse-ai.git
-cd log-parse-ai
+# Start with automatic Ollama configuration
 ./start.sh
 
 # OR use your local Ollama installation
@@ -36,8 +34,14 @@ We provide a comprehensive evaluation framework to assess LogParser-LLM's perfor
 
 2. Run evaluation:
 ```bash
-# Run evaluation dashboard
+# Run evaluation with automatic Ollama configuration
 ./evaluate.sh
+
+# OR use local Ollama installation
+./evaluate.sh --use-local-ollama
+
+# OR connect to remote Ollama instance
+./evaluate.sh --ollama-host http://your-ollama-server --ollama-port 11434
 
 # Access results at http://localhost:8502
 ```
@@ -68,12 +72,14 @@ For detailed setup and usage instructions, see [Evaluation Framework Documentati
 
 Choose how you want to use Ollama:
 
-1. **Containerized** (Default): 
-   - Zero setup required
-   - Automatically managed by Docker
-   - Isolated environment
+1. **Automatic Detection** (Default):
+   - Script detects if local Ollama is running
+   - Prompts user to choose between local or containerized
+   - Handles model availability automatically
    ```bash
    ./start.sh
+   # or
+   ./evaluate.sh
    ```
 
 2. **Local Installation**:
@@ -82,6 +88,8 @@ Choose how you want to use Ollama:
    - Faster startup time
    ```bash
    ./start.sh --use-local-ollama
+   # or
+   ./evaluate.sh --use-local-ollama
    ```
 
 3. **Remote Instance**:
@@ -90,7 +98,28 @@ Choose how you want to use Ollama:
    - Custom configuration
    ```bash
    ./start.sh --ollama-host http://your-server --ollama-port 11434
+   # or
+   ./evaluate.sh --ollama-host http://your-server --ollama-port 11434
    ```
+
+### Command Line Options
+
+Both `start.sh` and `evaluate.sh` support the following options:
+
+```bash
+Options:
+  --use-local-ollama     Use local Ollama instance instead of container
+  --ollama-host HOST     Specify custom Ollama host (default: http://localhost)
+  --ollama-port PORT     Specify custom Ollama port (default: 11434)
+  -h, --help            Show help message
+```
+
+### Model Management
+
+The scripts handle model management automatically:
+- Detects if required models are available
+- Offers to pull missing models
+- Works with both local and containerized setups
 
 ## ✨ Features
 
@@ -229,26 +258,23 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## 🛠️ Deployment Options
 
-### Using the Startup Script
+### Using the Scripts
 
-The `start.sh` script provides flexible deployment options:
+Both `start.sh` and `evaluate.sh` provide flexible deployment options:
 
 ```bash
-# Default setup (using containerized Ollama)
+# Default setup (automatic Ollama detection)
 ./start.sh
+./evaluate.sh
 
 # Use local Ollama instance
 ./start.sh --use-local-ollama
+./evaluate.sh --use-local-ollama
 
 # Use custom Ollama host and port
 ./start.sh --ollama-host http://my-ollama-server --ollama-port 12345
+./evaluate.sh --ollama-host http://my-ollama-server --ollama-port 12345
 ```
-
-Available options:
-- `--ollama-host HOST`: Specify custom Ollama host (default: http://localhost)
-- `--ollama-port PORT`: Specify custom Ollama port (default: 11434)
-- `--use-local-ollama`: Use local Ollama instance instead of container
-- `-h, --help`: Show help message
 
 ### Manual Configuration
 
@@ -266,7 +292,7 @@ export OLLAMA_MODEL=mistral
 docker compose --profile with-ollama up -d
 
 # Without Ollama container (using external instance)
-docker compose up -d streamlit
+docker compose up -d streamlit evaluation
 ```
 
 ## 📝 Usage

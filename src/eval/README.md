@@ -30,7 +30,14 @@ eval/
 
 2. Run evaluation:
 ```bash
+# Automatic Ollama configuration (recommended)
 ./evaluate.sh
+
+# Use local Ollama installation
+./evaluate.sh --use-local-ollama
+
+# Use remote Ollama instance
+./evaluate.sh --ollama-host http://your-ollama-server --ollama-port 11434
 ```
 
 3. View results at http://localhost:8502
@@ -42,14 +49,28 @@ eval/
 - Comprehensive metrics calculation
 - Interactive results visualization
 - Result caching for faster re-runs
+- Flexible Ollama integration options
 
 ## ⚙️ Configuration
+
+### Command Line Options
+
+The evaluation script supports the following options:
+```bash
+Options:
+  --use-local-ollama     Use local Ollama instance instead of container
+  --ollama-host HOST     Specify custom Ollama host (default: http://localhost)
+  --ollama-port PORT     Specify custom Ollama port (default: 11434)
+  -h, --help            Show help message
+```
+
+### Environment Variables
 
 The evaluation pipeline can be configured through environment variables:
 
 ```bash
 # Ollama settings
-OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_BASE_URL=http://localhost:11434  # Automatically set by script
 OLLAMA_MODEL=mistral
 
 # Pipeline settings
@@ -57,6 +78,25 @@ SIMILARITY_THRESHOLD=0.8
 BATCH_SIZE=1000
 CACHE_DIR=./cache/eval
 ```
+
+### Ollama Integration
+
+The framework supports three modes of Ollama integration:
+
+1. **Automatic Detection** (Default):
+   - Detects if local Ollama is running
+   - Prompts for user preference
+   - Handles model management
+
+2. **Local Installation**:
+   - Uses existing Ollama setup
+   - Shares models with other applications
+   - Faster startup time
+
+3. **Remote Instance**:
+   - Connects to remote Ollama server
+   - Supports custom host/port
+   - Enables distributed setup
 
 ## 📈 Metrics
 
@@ -88,20 +128,25 @@ Results are saved in multiple formats:
 
 ## 🔧 Troubleshooting
 
-1. **Dataset Issues**:
+1. **Ollama Issues**:
+   - Check if Ollama is running (`curl http://localhost:11434`)
+   - Verify model availability (`curl http://localhost:11434/api/tags`)
+   - Check GPU access if using NVIDIA
+
+2. **Dataset Issues**:
    - Verify dataset format
    - Check file permissions
    - Ensure correct directory structure
 
-2. **Performance Issues**:
+3. **Performance Issues**:
    - Adjust batch size
    - Monitor memory usage
    - Check system resources
 
-3. **Model Issues**:
-   - Verify Ollama connection
-   - Check model availability
-   - Monitor GPU utilization
+4. **Common Solutions**:
+   - Clear cache: `rm -rf cache/eval/*`
+   - Restart services: `docker compose restart evaluation`
+   - Check logs: `docker compose logs evaluation`
 
 ## 📚 References
 

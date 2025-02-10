@@ -8,6 +8,10 @@ pydantic>=2.5.2
 pydantic-settings>=2.1.0
 pydantic-ai==0.0.22
 ollama>=0.1.6
+protobuf>=4.25.1,<5.0.0
+pathway>=0.7.0
+# pathway-xpacks is now included in pathway core package
+litellm>=1.35.0
 
 # API and services
 fastapi>=0.109.0
@@ -43,8 +47,6 @@ mkdocs-material>=9.5.3
 mkdocstrings>=0.24.0
 
 # Additional dependencies
-dagster>=1.5.13
-dagster-cloud>=1.5.13
 huggingface-hub>=0.19.4
 torch>=2.1.2
 requests>=2.31.0

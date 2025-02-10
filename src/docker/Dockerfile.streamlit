@@ -1,59 +1,31 @@
 FROM python:3.10-slim
 
-WORKDIR /app
-
-# Install system dependencies and uv
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    g++ \
+    make \
     cmake \
     git \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first
+# Install Python packages with pip
 COPY requirements.txt .
-COPY setup.py .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install all dependencies with uv
-RUN uv pip install --no-cache-dir -r requirements.txt && \
-    uv pip install -e .
+# Create necessary directories
+RUN mkdir -p /data/logs /data/cache /output
 
-# Create necessary directories including dagster_home
-RUN mkdir -p /data/cache /data/logs /data/dagster_home /data/models/cache
-
-# Copy Dagster configuration files
-COPY src/config/dagster.yaml /data/dagster_home/
-COPY src/config/workspace.yaml /data/dagster_home/
+# Copy application code
+COPY . /app
+WORKDIR /app
 
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV DAGSTER_HOME=/data/dagster_home
+ENV LOG_LEVEL=INFO
+ENV RUST_LOG=info
+ENV PATHWAY_CACHE_DIR=/cache/pathway
 
-# Copy source code
-COPY src ./src
-
-# Create startup script
-RUN echo '#!/bin/bash\n\
-\n\
-# Wait for Dagster to be ready\n\
-until curl -s -f "http://${DAGSTER_HOST}:${DAGSTER_PORT}" > /dev/null; do\n\
-    echo "Waiting for Dagster..."\n\
-    sleep 5\n\
-done\n\
-\n\
-# Wait for Ollama to be ready\n\
-until curl -s -f "${OLLAMA_HOST}:${OLLAMA_PORT}/api/tags" > /dev/null; do\n\
-    echo "Waiting for Ollama..."\n\
-    sleep 5\n\
-done\n\
-\n\
-echo "All services are ready. Starting Streamlit..."\n\
-\n\
-# Start Streamlit\n\
-exec streamlit run src/ui/app.py --server.port=8501 --server.address=0.0.0.0\n'\
-> /start.sh && chmod +x /start.sh
-
-# Run the startup script
-CMD ["/start.sh"] 
+# Start Streamlit
+CMD ["streamlit", "run", "src/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"] 

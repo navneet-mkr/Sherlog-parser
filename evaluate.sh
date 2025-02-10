@@ -1,39 +1,52 @@
 #!/bin/bash
 
-# Check if mode is provided
-if [ $# -lt 1 ]; then
-    echo "Usage: ./evaluate.sh <mode>"
-    echo "Modes: local, remote"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Create required directories
+mkdir -p data/eval_datasets output/eval cache/eval
+
+# Check if Ollama is running
+if ! curl -s -f "http://localhost:11434/api/tags" > /dev/null 2>&1; then
+    echo -e "${RED}Error: Ollama is not running${NC}"
+    echo "Please start Ollama first:"
+    echo "ollama serve"
     exit 1
 fi
 
-MODE=$1
-
-# Set Ollama URL based on mode
-if [ "$MODE" = "local" ]; then
-    OLLAMA_URL="http://localhost:11434"
-    echo "Running in local mode with Ollama at $OLLAMA_URL"
-elif [ "$MODE" = "remote" ]; then
-    OLLAMA_URL="http://ollama:11434"
-    echo "Running in remote mode with Ollama at $OLLAMA_URL"
-else
-    echo "Invalid mode: $MODE"
-    echo "Valid modes: local, remote"
-    exit 1
+# Check if model is available
+if ! curl -s -f "http://localhost:11434/api/tags" | grep -q "mistral"; then
+    echo "Pulling Mistral model..."
+    curl -X POST http://localhost:11434/api/pull -d '{"name": "mistral"}'
 fi
 
-# Wait for Ollama to be ready
-echo "Waiting for Ollama to be ready..."
-while ! curl -s "$OLLAMA_URL/api/tags" > /dev/null; do
-    sleep 1
+# Start evaluation service
+echo "Starting evaluation service..."
+docker compose up -d evaluation
+
+# Wait for service to be ready
+echo -n "Waiting for evaluation service..."
+max_retries=30
+retry_count=0
+
+while [ $retry_count -lt $max_retries ]; do
+    if curl -s -f "http://localhost:8502" > /dev/null 2>&1; then
+        echo -e "\n${GREEN}Evaluation service is ready!${NC}"
+        break
+    fi
+    echo -n "."
+    sleep 2
+    retry_count=$((retry_count + 1))
 done
-echo "Ollama is ready"
 
-# Create necessary directories
-mkdir -p cache eval_results
+if [ $retry_count -eq $max_retries ]; then
+    echo -e "\n${RED}Failed to start evaluation service${NC}"
+    exit 1
+fi
 
-# Run evaluation
-PYTHONPATH=. dagster job execute \
-    -f src/eval/eval_pipeline.py \
-    -j evaluate_logparser_llm \
-    -c src/eval/run_config.yaml 
+echo -e "\n${GREEN}Evaluation pipeline is ready!${NC}"
+echo -e "\nAccess the evaluation dashboard at:"
+echo -e "http://localhost:8502" 

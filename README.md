@@ -36,17 +36,16 @@ We provide a comprehensive evaluation framework to assess LogParser-LLM's perfor
 
 2. Run evaluation:
 ```bash
-# Run evaluation in Docker (recommended)
-docker compose --profile eval up eval
-
-# OR run locally
+# Run evaluation dashboard
 ./evaluate.sh
+
+# Access results at http://localhost:8502
 ```
 
 The framework:
 - Uses Loghub-2k and LogPub benchmark datasets
 - Calculates metrics from the LogParser-LLM paper
-- Integrates with Dagster for pipeline orchestration
+- Real-time streaming processing with Pathway
 - Supports multiple Ollama models
 - Caches results for faster re-evaluation
 
@@ -90,18 +89,18 @@ Choose how you want to use Ollama:
 - 🎯 **Pattern Extraction**: Automatically extracts regex patterns from log clusters
 - ⚡ **High Performance**:
   - 🚀 Fast local inference with Ollama
-  - 📊 Incremental clustering with scikit-learn
-  - 📦 Batch processing for large log files
+  - 📊 Real-time streaming with Pathway
+  - 📦 Efficient vector similarity search
 - 🚀 **Production Ready**:
   - 🛡️ Type-safe with Pydantic models
   - ⚙️ Configurable via environment variables
   - ✅ Extensive test coverage
   - 🔄 Proper error handling and logging
 - 🔄 **Advanced Pipeline**:
-  - 🏗️ Built with Dagster for robust pipeline orchestration
-  - 📊 Visual pipeline UI for debugging and monitoring
+  - 🏗️ Built with Pathway for real-time processing
+  - 📊 Streaming architecture for scalability
   - 🤖 Integrated model management
-  - 📝 Asset tracking and materialization
+  - 📝 Automatic template extraction
 
 ## 🛠️ Quick Start with Docker
 
@@ -112,25 +111,25 @@ The easiest way to get started is using Docker Compose:
 docker compose up -d
 
 # Access the interfaces:
-- Streamlit UI: http://localhost:8501
-- Dagster UI: http://localhost:3000
+- Web UI: http://localhost:8501
+- Evaluation UI: http://localhost:8502
 - Ollama API: http://localhost:11434
 ```
 
 ### 🎮 Using the Application
 
-1. **🖥️ Access the Streamlit UI**:
+1. **🖥️ Access the Web UI**:
    - Open your browser and go to `http://localhost:8501`
    - Select a model from the available options
    - Upload your log file using the file uploader
    - Adjust analysis parameters if needed
    - Click "Analyze Logs" to start processing
 
-2. **📊 Monitor Pipeline Progress**:
-   - The Dagster UI will be available at `http://localhost:3000`
-   - Monitor pipeline execution and progress
-   - View detailed logs and results
-   - Access visualizations and insights
+2. **📊 Monitor Progress**:
+   - Watch real-time processing in the UI
+   - View extracted templates and patterns
+   - Export results and insights
+   - Access detailed metrics
 
 ### 🤖 Model Management
 
@@ -153,14 +152,13 @@ Configuration is managed through environment variables in `.env`:
 
 ```bash
 # Ollama Settings
-OLLAMA_HOST=http://localhost
-OLLAMA_PORT=11434
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=mistral
 OLLAMA_TIMEOUT=120
 
-# Model Settings
+# Pipeline Settings
 EMBEDDING_MODEL=all-MiniLM-L6-v2
-CHUNK_SIZE=10000
-N_CLUSTERS=20
+SIMILARITY_THRESHOLD=0.8
 BATCH_SIZE=1000
 ```
 
@@ -168,18 +166,18 @@ BATCH_SIZE=1000
 
 The project follows a microservices architecture:
 
-1. **Streamlit UI**:
-   - Web interface for log analysis
-   - Model management
-   - Result visualization
+1. **Web Interface**:
+   - Streamlit-based UI
+   - Real-time visualization
+   - Interactive analysis
 
-2. **Dagster Service**:
-   - Pipeline orchestration
-   - Job monitoring
-   - Asset management
+2. **Processing Pipeline**:
+   - Pathway streaming engine
+   - Vector similarity search
+   - Template extraction
 
-3. **Ollama Service**:
-   - LLM inference
+3. **Inference Service**:
+   - Ollama LLM integration
    - Model management
    - GPU acceleration
 
@@ -189,13 +187,13 @@ Run the test suite:
 
 ```bash
 # Run all tests
-docker compose --profile test up test
+pytest tests/
 
 # Run specific tests
-docker compose run --rm test pytest tests/test_ollama_integration.py -v
+pytest tests/test_ollama_integration.py -v
 
 # Run with coverage
-docker compose run --rm test pytest --cov=src --cov-report=term-missing tests/
+pytest --cov=src --cov-report=term-missing tests/
 ```
 
 ## 📚 Documentation
@@ -213,7 +211,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## 📋 Prerequisites
 
 - Docker and Docker Compose
-- 16GB+ RAM recommended
+- 8GB+ RAM recommended
 - (Optional) Local Ollama installation if not using containerized version
 
 ## 🛠️ Deployment Options
@@ -245,8 +243,8 @@ If you prefer manual configuration:
 
 1. Set environment variables:
 ```bash
-export OLLAMA_HOST=http://your-ollama-host
-export OLLAMA_PORT=your-ollama-port
+export OLLAMA_BASE_URL=http://your-ollama-host:11434
+export OLLAMA_MODEL=mistral
 ```
 
 2. Start services:
@@ -255,7 +253,7 @@ export OLLAMA_PORT=your-ollama-port
 docker compose --profile with-ollama up -d
 
 # Without Ollama container (using external instance)
-docker compose up -d dagster streamlit
+docker compose up -d streamlit
 ```
 
 ## 📝 Usage
@@ -263,11 +261,11 @@ docker compose up -d dagster streamlit
 1. Access the web interface at http://localhost:8501
 2. Upload a log file (.log or .txt)
 3. Select processing parameters:
-   - Number of clusters
+   - Similarity threshold
    - Batch size
    - Model settings
 4. Start analysis
-5. View results in the Dagster UI (http://localhost:3000)
+5. View results in real-time
 
 ## 🔍 Monitoring & Management
 

@@ -1,44 +1,6 @@
-services:
-  dagster:
-    build:
-      context: .
-      dockerfile: src/docker/Dockerfile.dagster
-    ports:
-      - "3000:3000"
-      - "4000:4000"  # gRPC server port
-    volumes:
-      - .:/app
-      - dagster_data:/data
-      - dagster_home:/data/dagster_home
-      - dagster_tmp:/tmp/dagster
-      - model_storage:/data/models
-      - ./src/docker/init-dagster.sh:/init-dagster.sh
-    environment:
-      - DAGSTER_HOME=/data/dagster_home
-      - PYTHONPATH=/app
-      - DAGSTER_GRPC_HOST=0.0.0.0
-      - DAGSTER_GRPC_PORT=4000
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost}
-      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
-      - MODELS_DIR=/data/models
-    healthcheck:
-      test: 
-        - CMD-SHELL
-        - 'test -f /data/dagster_home/dagster.yaml && curl -f http://localhost:3000 || exit 1'
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        rm -f /data/dagster_home/dagster.yaml
-        chmod +x /init-dagster.sh
-        exec /init-dagster.sh
-    restart: unless-stopped
-    networks:
-      - app_network
+version: '3.8'
 
+services:
   streamlit:
     build:
       context: .
@@ -46,148 +8,94 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - .:/app
-      - dagster_data:/data
-      - dagster_home:/data/dagster_home
-      - dagster_tmp:/tmp/dagster
-      - model_storage:/data/models
+      - ./data:/data
+      - ./output:/output
+      - ./cache:/cache
     environment:
-      - DAGSTER_HOME=/data/dagster_home
-      - DAGSTER_HOST=dagster
-      - DAGSTER_PORT=3000
-      - PYTHONPATH=/app
-      - DAGSTER_GRPC_HOST=dagster
-      - DAGSTER_GRPC_PORT=4000
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost}
-      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
-      - MODELS_DIR=/data/models
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=mistral
+      - LOG_LEVEL=INFO
+      - RUST_LOG=info
+      - PATHWAY_CACHE_DIR=/cache/pathway
     depends_on:
-      dagster:
-        condition: service_started
       ollama:
-        condition: service_started
-        required: false
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    restart: unless-stopped
     networks:
-      - app_network
+      - app-network
 
   ollama:
-    profiles:
-      - with-ollama
     image: ollama/ollama:latest
-    platform: linux/arm64
     ports:
       - "11434:11434"
     volumes:
-      - ollama_models:/root/.ollama
-      - ./src/docker/init-ollama.sh:/init-ollama.sh
+      - ollama_data:/root/.ollama
     deploy:
       resources:
-        limits:
-          memory: 16G
         reservations:
-          memory: 4G
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_ORIGINS=*
-      - OLLAMA_MODELS=/root/.ollama/models
-      - OLLAMA_USE_MLX=true
-      - OLLAMA_DOWNLOAD_TIMEOUT=300
-      - OLLAMA_DOWNLOAD_RETRIES=3
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
-      test: 
-        - CMD-SHELL
-        - 'curl -s -f "http://localhost:11434/api/tags" || exit 1'
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: 60s
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-    sysctls:
-      - net.core.somaxconn=65535
-    restart: unless-stopped
     networks:
-      - app_network
-    stop_grace_period: 60s
+      - app-network
 
-  eval:
-    profiles:
-      - eval
+  evaluation:
     build:
       context: .
       dockerfile: src/docker/Dockerfile.eval
     ports:
-      - "3001:3000"  # Different port to avoid conflict with main Dagster
-      - "4001:4000"
+      - "8502:8501"  # Different port for evaluation UI
     volumes:
-      - .:/app
-      - ./data/eval_datasets:/data/eval_datasets
-      - ./data/eval_cache:/data/eval_cache
-      - dagster_eval_home:/data/dagster_home
-      - dagster_eval_tmp:/tmp/dagster
-      - ./src/docker/init-dagster.sh:/init-dagster.sh
+      - ./data:/data
+      - ./output:/output
+      - ./cache:/cache
     environment:
-      - DAGSTER_HOME=/data/dagster_home
-      - PYTHONPATH=/app
-      - DAGSTER_GRPC_HOST=0.0.0.0
-      - DAGSTER_GRPC_PORT=4000
-      - OLLAMA_HOST=http://localhost
-      - OLLAMA_PORT=11434
-    healthcheck:
-      test: 
-        - CMD-SHELL
-        - 'test -f /data/dagster_home/dagster.yaml && curl -f http://localhost:3000 || exit 1'
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        rm -f /data/dagster_home/dagster.yaml
-        chmod +x /init-dagster.sh
-        exec /init-dagster.sh
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=mistral
+      - LOG_LEVEL=INFO
+      - RUST_LOG=info
+      - PATHWAY_CACHE_DIR=/data/eval_cache/pathway
+    depends_on:
+      ollama:
+        condition: service_healthy
     networks:
-      - app_network
+      - app-network
 
   test:
     build:
       context: .
       dockerfile: src/docker/Dockerfile.test
     volumes:
-      - .:/app
+      - ./data:/data
+      - ./output:/output
+      - ./cache:/cache
     environment:
-      - PYTHONPATH=/app
-      - OLLAMA_HOST=http://localhost
-      - OLLAMA_PORT=11434
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=mistral
+      - LOG_LEVEL=INFO
+      - RUST_LOG=info
+      - PATHWAY_CACHE_DIR=/data/test_cache/pathway
     depends_on:
       ollama:
         condition: service_healthy
     profiles:
       - test
     networks:
-      - app_network
-
-networks:
-  app_network:
-    driver: bridge
+      - app-network
 
 volumes:
-  dagster_data:
-  dagster_home:
-  dagster_tmp:
-  model_storage:
-  ollama_models:
-  eval_data:
-  eval_cache:
-  dagster_eval_home:
-  dagster_eval_tmp: 
+  ollama_data:
+
+networks:
+  app-network:
+    driver: bridge 

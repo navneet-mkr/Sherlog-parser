@@ -1,64 +1,31 @@
 FROM python:3.10-slim
 
-WORKDIR /app
-
-# Install system dependencies and uv
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    g++ \
+    make \
     cmake \
     git \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir uv
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Dagster packages with uv
-RUN uv pip install --system --no-cache-dir \
-    dagster \
-    dagit \
-    dagster-graphql \
-    dagster-webserver
+# Install Python packages with pip
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
-RUN mkdir -p /data/dagster_home /data/eval_datasets /data/eval_cache
+RUN mkdir -p /data/eval_datasets /data/eval_cache /output
+
+# Copy application code
+COPY . /app
+WORKDIR /app
 
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV DAGSTER_HOME=/data/dagster_home
+ENV LOG_LEVEL=INFO
+ENV RUST_LOG=info
+ENV PATHWAY_CACHE_DIR=/data/eval_cache/pathway
 
-# Copy source code (only evaluation-related files)
-COPY src/eval ./src/eval
-COPY src/models ./src/models
-
-# Install required dependencies with uv
-RUN uv pip install --system --no-cache-dir \
-    numpy \
-    pandas \
-    scikit-learn \
-    pydantic \
-    pydantic-settings \
-    pydantic-ai==0.0.22 \
-    torch \
-    requests \
-    tqdm
-
-# Create a minimal startup script for evaluation
-RUN echo '#!/bin/bash\n\
-# Setup Dagster home\n\
-mkdir -p $DAGSTER_HOME\n\
-\n\
-# Set Python path\n\
-export PYTHONPATH=/app:$PYTHONPATH\n\
-\n\
-# Start the Dagster daemon in the background\n\
-dagster-daemon run -m src.eval.eval_pipeline &\n\
-\n\
-# Start the gRPC server in the background\n\
-dagster api grpc -m src.eval.eval_pipeline --host 0.0.0.0 --port 4000 &\n\
-\n\
-# Start the webserver in the foreground\n\
-dagster-webserver --host 0.0.0.0 --port 3000 -m src.eval.eval_pipeline\n'\
-> /start.sh && chmod +x /start.sh
-
-# Start using the script
-CMD ["/start.sh"] 
+# Start Streamlit for evaluation UI
+CMD ["streamlit", "run", "src/eval/ui.py", "--server.port=8501", "--server.address=0.0.0.0"] 

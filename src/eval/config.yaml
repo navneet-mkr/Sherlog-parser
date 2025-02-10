@@ -1,6 +1,41 @@
-base_dir: /app/data/eval_datasets
-cache_dir: /app/data/eval_cache
-ollama_base_url: http://localhost:11434
-model_name: mistral
-similarity_threshold: 0.8
-batch_size: 1000 
+# Evaluation pipeline configuration
+
+# Dataset settings
+datasets:
+  base_dir: "./data/eval_datasets"
+  types:
+    - "loghub_2k"
+    - "logpub"
+  systems:
+    - "Apache"
+    - "Hadoop"
+    - "Linux"
+    - "Zookeeper"
+
+# Pipeline settings
+pipeline:
+  batch_size: 1000
+  similarity_threshold: 0.8
+  cache_dir: "./cache/eval"
+  output_dir: "./output/eval"
+
+# Model settings
+model:
+  name: "mistral"
+  embedding_model: "all-MiniLM-L6-v2"
+  temperature: 0.1
+  top_k: 40
+  top_p: 0.9
+  repeat_penalty: 1.1
+
+# Metrics settings
+metrics:
+  save_predictions: true
+  save_templates: true
+  save_metrics: true
+  plot_results: true
+
+# Ollama settings
+ollama:
+  base_url: "http://localhost:11434"
+  timeout: 120 

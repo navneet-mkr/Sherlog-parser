@@ -1,4 +1,11 @@
+"""UI components for the log parsing application."""
+
+import os
+from pathlib import Path
+from typing import List, Optional
+
 import streamlit as st
+import pandas as pd
 from typing import Dict, Any, Optional, List
 from src.utils.progress import format_size, ProgressStats
 
@@ -74,37 +81,70 @@ def show_progress(stats: ProgressStats, container=st):
     """
     container.markdown(progress_html, unsafe_allow_html=True)
 
-def show_sidebar_info(dagster_host: str, dagster_port: str):
+def show_file_uploader() -> List:
+    """Show file uploader component."""
+    st.markdown("### Upload Log Files")
+    st.info("📁 Supported file types: .log and .txt files")
+    
+    return st.file_uploader(
+        "Choose log files",
+        type=["log", "txt"],
+        help="Upload log files to analyze patterns and templates",
+        accept_multiple_files=True
+    )
+
+def show_log_viewer(log_dir: str) -> None:
+    """Show log file viewer component."""
+    st.markdown("### Log Files")
+    
+    log_files = list(Path(log_dir).glob("*.log")) + list(Path(log_dir).glob("*.txt"))
+    
+    if not log_files:
+        st.info("No log files found.")
+        return
+    
+    selected_file = st.selectbox(
+        "Select log file to view",
+        options=log_files,
+        format_func=lambda x: x.name
+    )
+    
+    if selected_file:
+        with open(selected_file) as f:
+            content = f.read()
+        st.text_area("Log Content", value=content, height=400)
+
+def show_template_viewer(output_dir: str) -> None:
+    """Show template viewer component."""
+    st.markdown("### Extracted Templates")
+    
+    template_file = Path(output_dir) / "templates.csv"
+    if not template_file.exists():
+        st.info("No templates generated yet.")
+        return
+    
+    templates_df = pd.read_csv(template_file)
+    st.dataframe(templates_df)
+
+def show_sidebar_info() -> None:
     """Show sidebar information."""
-    st.sidebar.header("📖 Pipeline Steps")
+    st.sidebar.markdown("### About")
     st.sidebar.markdown("""
-    1. **📥 Read Log File**
-       - Loads and validates the log file
-       - Performs initial data cleaning
-    
-    2. **🧮 Generate Embeddings**
-       - Creates vector embeddings for log lines
-       - Uses state-of-the-art language models
-    
-    3. **🎯 Cluster Logs**
-       - Groups similar log patterns
-       - Identifies common message types
-    
-    4. **📊 Analyze Patterns**
-       - Extracts and validates patterns
-       - Generates statistical insights
+    This application uses:
+    - 🔄 Pathway for streaming processing
+    - 🤖 Ollama for local LLM inference
+    - 📊 Vector similarity for template matching
     """)
-
-    st.sidebar.header("💡 Tips")
+    
+    st.sidebar.markdown("### Resources")
     st.sidebar.markdown("""
-    - Adjust clusters based on log variety
-    - Use larger batch sizes for better performance
-    - Monitor progress in the Dagster UI
+    - [Documentation](https://pathway.com/developers)
+    - [GitHub Repository](https://github.com/pathwaycom/llm-app)
+    - [Discord Community](https://discord.gg/pathway)
     """)
-
-    # Add link to Dagster UI
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(f"[🔗 Open Dagster UI](http://{dagster_host}:{dagster_port})")
+    
+    st.sidebar.markdown("### Status")
+    st.sidebar.success("✅ System Ready")
 
 def show_model_settings() -> Dict[str, float]:
     """Show and get model settings."""

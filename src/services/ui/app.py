@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Type, Tuple, cast
 from cachetools import TTLCache, cached
 from datetime import timedelta
 
@@ -20,6 +20,9 @@ from src.core.errors import (
 # Initialize caches
 CLUSTER_CACHE = TTLCache(maxsize=100, ttl=timedelta(minutes=5).total_seconds())
 
+# Define excluded exceptions with proper type casting
+EXCLUDED_EXCEPTIONS: Tuple[Type[Exception], ...] = (cast(Type[Exception], KeyboardInterrupt), cast(Type[Exception], SystemExit))
+
 # Initialize session state
 if 'pipeline' not in st.session_state:
     st.session_state.pipeline = None
@@ -28,7 +31,7 @@ if 'config' not in st.session_state:
 
 @error_handler(
     reraise=False,
-    exclude=[KeyboardInterrupt, SystemExit]
+    exclude=EXCLUDED_EXCEPTIONS
 )
 def initialize_pipeline() -> None:
     """Initialize the log processing pipeline."""
@@ -41,12 +44,17 @@ def initialize_pipeline() -> None:
         model_name=settings.model_name
     )
     st.session_state.config = config
-    st.session_state.pipeline = LogParsingPipeline(config)
+    st.session_state.pipeline = LogParsingPipeline(
+        log_dir=config.input_dir,
+        output_dir=config.output_dir,
+        cache_dir=config.cache_dir,
+        llm_api_base=config.ollama_base_url,
+        llm_model=config.model_name
+    )
 
 @error_handler(
     reraise=False,
-    on_error=FileError,
-    exclude=[KeyboardInterrupt, SystemExit]
+    exclude=EXCLUDED_EXCEPTIONS
 )
 def process_uploaded_file(uploaded_file) -> None:
     """Process uploaded log file.
@@ -94,8 +102,7 @@ def process_uploaded_file(uploaded_file) -> None:
 
 @error_handler(
     reraise=False,
-    on_error=ClusteringError,
-    exclude=[KeyboardInterrupt, SystemExit]
+    exclude=EXCLUDED_EXCEPTIONS
 )
 def display_template_info(template_id: str) -> None:
     """Display information about a specific template.
@@ -156,7 +163,7 @@ def display_template_info(template_id: str) -> None:
 
 @error_handler(
     reraise=False,
-    exclude=[KeyboardInterrupt, SystemExit]
+    exclude=EXCLUDED_EXCEPTIONS
 )
 def main():
     """Main Streamlit application."""

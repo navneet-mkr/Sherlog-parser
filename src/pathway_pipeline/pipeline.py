@@ -4,8 +4,9 @@ Main pipeline implementation for log parsing using Pathway.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime, UTC
+from dataclasses import dataclass
 
 import pathway as pw
 import pandas as pd
@@ -14,14 +15,44 @@ from .schema import LogEntrySchema, LogTemplateSchema, ParsedLogSchema
 from src.models.log_parser import LogParserLLM
 from src.models.ollama import create_ollama_analyzer
 
+@dataclass
+class PipelineConfig:
+    """Configuration for the log parsing pipeline."""
+    input_dir: str
+    output_dir: str
+    cache_dir: str
+    ollama_base_url: str = "http://localhost:11434"
+    model_name: str = "ollama/mistral"
+
 @pw.udf
-def parse_timestamp(timestamp_str: str) -> pw.DATE_TIME_UTC:
-    """Parse timestamp string to Pathway UTC datetime."""
+def parse_timestamp(timestamp_str: Union[str, int, float]) -> pw.DateTimeUtc:
+    """Parse timestamp string to Pathway UTC datetime.
+    
+    Handles multiple timestamp formats:
+    - ISO format with timezone (e.g., '2023-05-15T10:13:00+01:00')
+    - ISO format without timezone (assumes UTC, e.g., '2023-05-15T10:13:00')
+    - Unix timestamp in milliseconds
+    """
     try:
-        dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        return pw.DATE_TIME_UTC.from_python(dt)
-    except (ValueError, AttributeError):
-        return pw.DATE_TIME_UTC.from_python(datetime.now(UTC))
+        # Try parsing as Unix timestamp (milliseconds)
+        if isinstance(timestamp_str, (int, float)):
+            return pw.DATE_TIME_UTC.from_timestamp(timestamp_str, unit="ms")
+            
+        # Try parsing as ISO format
+        if timestamp_str.endswith('Z'):
+            timestamp_str = timestamp_str.replace('Z', '+00:00')
+        if '+' in timestamp_str or '-' in timestamp_str:
+            # Has timezone info
+            dt = datetime.fromisoformat(timestamp_str)
+            return pw.DateTimeUtc(dt)
+        else:
+            # No timezone - assume UTC
+            dt = datetime.fromisoformat(timestamp_str)
+            dt = dt.replace(tzinfo=UTC)
+            return pw.DateTimeUtc(dt)
+    except (ValueError, AttributeError) as e:
+        print(f"Error parsing timestamp {timestamp_str}: {e}")
+        return pw.DateTimeUtc(datetime.now(UTC))
 
 class LogParsingPipeline:
     """Main pipeline for log parsing using Pathway."""
@@ -71,10 +102,11 @@ class LogParsingPipeline:
             mode="streaming"
         )
         
-        # Add parsed timestamp
+        # Add parsed timestamp while preserving original
         self.logs = self.logs.select(
             content=pw.this.content,
-            timestamp=parse_timestamp(pw.this.timestamp),
+            timestamp=pw.this.timestamp,  # Keep original string
+            parsed_timestamp=parse_timestamp(pw.this.timestamp),  # Add parsed UTC timestamp
             log_level=pw.this.log_level,
             source=pw.this.source
         )
@@ -95,34 +127,29 @@ class LogParsingPipeline:
     
     def _process_logs(self) -> pw.Table:
         """Process logs using LogParserLLM."""
+        # Convert Pathway table to list for batch processing
+        temp_csv = os.path.join(self.cache_dir, "temp_logs.csv")
+        pw.io.csv.write(self.logs, temp_csv)
+        log_contents = pd.read_csv(temp_csv)
+        os.remove(temp_csv)  # Clean up
+        
         # Process logs in batches
         processed_logs = []
-        current_logs = []
         
-        # Convert streaming table to list for batch processing
-        for log in self.logs:
-            current_logs.append(log.content)
+        for idx, row in enumerate(log_contents.itertuples()):
+            result = self.log_parser.parse_log(str(row[1]), idx)  # content is at index 1
+            processed_logs.append(result)
             
-            if len(current_logs) >= self.batch_size:
-                results = self.log_parser.process_logs(current_logs)
-                processed_logs.extend(results)
-                current_logs = []
-        
-        # Process remaining logs
-        if current_logs:
-            results = self.log_parser.process_logs(current_logs)
-            processed_logs.extend(results)
-        
         # Convert results to DataFrame
         results_df = pd.DataFrame({
             'log_id': range(len(processed_logs)),
-            'content': [log.content for log in self.logs],
-            'timestamp': [log.timestamp for log in self.logs],
-            'log_level': [log.log_level for log in self.logs],
-            'source': [log.source for log in self.logs],
-            'template': [r.template for r in processed_logs],
-            'variables': [r.variables for r in processed_logs],
-            'inference_time': [r.inference_time_ms for r in processed_logs]
+            'content': log_contents['content'].tolist(),
+            'timestamp': log_contents['timestamp'].tolist(),
+            'log_level': log_contents['log_level'].tolist(),
+            'source': log_contents['source'].tolist(),
+            'template': [r[0] for r in processed_logs],  # template is first element of tuple
+            'variables': [r[1] for r in processed_logs],  # parameters dict is second element
+            'inference_time': [0 for _ in processed_logs]  # No inference time in parse_log
         })
         
         return pw.debug.table_from_pandas(results_df)
@@ -136,8 +163,7 @@ class LogParsingPipeline:
         )
         
         # Write unique templates to CSV
-        templates = self.parsed_logs.groupby(
-            template=pw.this.template,
+        templates = self.parsed_logs.groupby(pw.this.template).reduce(
             count=pw.reducers.count()
         )
         pw.io.csv.write(

@@ -3,11 +3,12 @@ Evaluation pipeline implementation using Pathway.
 """
 
 import json
-import time
 from pathlib import Path
 from typing import Dict
-from datetime import datetime
+from datetime import datetime, UTC
 import pandas as pd
+from dataclasses import asdict
+import os
 
 import pathway as pw
 
@@ -21,10 +22,10 @@ def parse_timestamp(timestamp_str: str) -> pw.DateTimeUtc:
     """Parse timestamp string to Pathway UTC datetime."""
     try:
         dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        return pw.DateTimeUtc.from_python(dt)
+        return pw.DateTimeUtc(dt)
     except (ValueError, AttributeError):
         # Return a default timestamp if parsing fails
-        return pw.DateTimeUtc.from_python(datetime.utcnow())
+        return pw.DateTimeUtc(datetime.now(UTC))
 
 class EvaluationPipeline:
     def __init__(
@@ -103,23 +104,22 @@ class EvaluationPipeline:
         
     def _process_logs(self) -> pw.Table:
         """Process logs using LogParserLLM."""
-        # Process logs in batches
+        # Process logs one at a time
         processed_logs = []
-        for i in range(0, len(self.dataset.raw_logs), self.batch_size):
-            batch = self.dataset.raw_logs[i:i + self.batch_size]
-            results = self.log_parser.process_logs(batch)
-            processed_logs.extend(results)
+        for i, log in enumerate(self.dataset.raw_logs):
+            result = self.log_parser.parse_log(log, i)
+            processed_logs.append(result)
         
         # Convert results to DataFrame
         results_df = pd.DataFrame({
             'log_id': range(len(processed_logs)),
             'content': self.dataset.raw_logs,
-            'predicted_template': [r.template for r in processed_logs],
+            'predicted_template': [r[0] for r in processed_logs],  # template is first element
             'ground_truth': [
                 self.dataset.ground_truth_templates[i]
                 for i in range(len(processed_logs))
             ],
-            'inference_time': [r.inference_time_ms for r in processed_logs]
+            'inference_time': [0 for _ in processed_logs]  # No inference time in parse_log
         })
         
         return pw.debug.table_from_pandas(results_df)
@@ -127,7 +127,10 @@ class EvaluationPipeline:
     def evaluate(self) -> EvaluationMetrics:
         """Evaluate the pipeline results."""
         # Convert results to format expected by metrics
-        results_df = pw.debug.compute_and_print(self.results, include_id=False)
+        temp_csv = os.path.join(self.cache_dir, "temp_results.csv")
+        pw.io.csv.write(self.results, temp_csv)
+        results_df = pd.read_csv(temp_csv)
+        os.remove(temp_csv)  # Clean up
         
         predicted_templates = {
             row['log_id']: row['predicted_template']
@@ -158,7 +161,7 @@ class EvaluationPipeline:
         # Save metrics
         metrics_file = self.output_dir / f"{self.dataset.name}_metrics.json"
         with open(metrics_file, 'w') as f:
-            json.dump(metrics.dict(), f, indent=2)
+            json.dump(asdict(metrics), f, indent=2)
         
         # Save templates
         template_file = self.output_dir / f"{self.dataset.name}_templates.csv"

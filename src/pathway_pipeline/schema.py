@@ -8,7 +8,7 @@ from typing import Optional, List, Dict
 class LogEntrySchema(pw.Schema):
     """Schema for raw log entries."""
     content: str
-    timestamp: str
+    timestamp: str  # Keep as string in raw input
     log_level: str
     source: str
 
@@ -22,7 +22,7 @@ class LogTemplateSchema(pw.Schema):
 class ParsedLogSchema(pw.Schema):
     """Schema for parsed log entries."""
     content: str
-    timestamp: pw.DATE_TIME_UTC
+    timestamp: str  # Original timestamp string
     log_level: str
     source: str
     template_id: str

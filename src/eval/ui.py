@@ -4,6 +4,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Optional, Dict, List
+from dataclasses import asdict
 
 import streamlit as st
 import pandas as pd
@@ -156,7 +157,7 @@ def main():
                 templates_df = pd.read_csv(results_dir / f"{system}_{dataset_type}_templates.csv")
                 
                 st.session_state.results = {
-                    "metrics": metrics.dict(),
+                    "metrics": asdict(metrics),
                     "templates": templates_df
                 }
         

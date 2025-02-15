@@ -15,18 +15,18 @@ class ModelInfo(BaseModel):
 
 class LLMSettings(BaseModel):
     """Settings for LLM configuration."""
-    model_name: str = Field("mistral", env='OLLAMA_MODEL')
-    temperature: float = Field(0.1, env='LLM_TEMPERATURE')
-    top_k: int = Field(40, env='LLM_TOP_K')
-    top_p: float = Field(0.9, env='LLM_TOP_P')
-    repeat_penalty: float = Field(1.1, env='LLM_REPEAT_PENALTY')
-    context_length: int = Field(4096, env='LLM_CONTEXT_LENGTH')
+    model_name: str = Field(default="mistral", validation_alias="OLLAMA_MODEL")
+    temperature: float = Field(default=0.1, validation_alias="LLM_TEMPERATURE")
+    top_k: int = Field(default=40, validation_alias="LLM_TOP_K")
+    top_p: float = Field(default=0.9, validation_alias="LLM_TOP_P")
+    repeat_penalty: float = Field(default=1.1, validation_alias="LLM_REPEAT_PENALTY")
+    context_length: int = Field(default=4096, validation_alias="LLM_CONTEXT_LENGTH")
 
 class PipelineConfig(BaseModel):
     """Configuration for log processing pipeline."""
-    input_dir: Path = Field("./data/logs")
-    output_dir: Path = Field("./output")
-    cache_dir: Path = Field("./cache")
+    input_dir: Path = Field(default=Path("./data/logs"))
+    output_dir: Path = Field(default=Path("./output"))
+    cache_dir: Path = Field(default=Path("./cache"))
     encoding: str = "utf-8"
     similarity_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     batch_size: int = Field(default=1000, gt=0)
@@ -70,9 +70,9 @@ AVAILABLE_MODELS: Dict[str, ModelInfo] = {
 
 class OllamaSettings(BaseModel):
     """Settings for Ollama configuration."""
-    base_url: str = Field("http://localhost:11434", env='OLLAMA_BASE_URL')
-    timeout: int = Field(120, env='OLLAMA_TIMEOUT')
-    model: str = Field("mistral", env='OLLAMA_MODEL')
+    base_url: str = Field(default="http://localhost:11434", validation_alias="OLLAMA_BASE_URL")
+    timeout: int = Field(default=120, validation_alias="OLLAMA_TIMEOUT")
+    model: str = Field(default="mistral", validation_alias="OLLAMA_MODEL")
 
 class Settings(BaseModel):
     """Application settings."""

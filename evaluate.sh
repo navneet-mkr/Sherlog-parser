@@ -183,12 +183,13 @@ if [ "$USE_LOCAL_OLLAMA" = true ]; then
     fi
     
     # Start evaluation service with local Ollama
-    docker compose up -d evaluation
+    echo "Building and starting evaluation service..."
+    docker compose up -d --build evaluation
     CONTAINERS_STARTED=true
 else
     echo "Starting containerized Ollama..."
     # Start Ollama container with profile
-    docker compose --profile with-ollama up -d ollama
+    docker compose --profile with-ollama up -d --build ollama
     CONTAINERS_STARTED=true
     
     # Wait for Ollama to be ready
@@ -201,7 +202,8 @@ else
     fi
     
     # Start evaluation service
-    docker compose up -d evaluation
+    echo "Building and starting evaluation service..."
+    docker compose up -d --build evaluation
 fi
 
 # Wait for evaluation service

@@ -22,7 +22,7 @@ class LogTemplateSchema(pw.Schema):
 class ParsedLogSchema(pw.Schema):
     """Schema for parsed log entries."""
     content: str
-    timestamp: pw.DateTimeUtc
+    timestamp: pw.DATE_TIME_UTC
     log_level: str
     source: str
     template_id: str

@@ -5,23 +5,23 @@ Main pipeline implementation for log parsing using Pathway.
 import os
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, UTC
 
 import pathway as pw
 import pandas as pd
 
-from .schema import LogEntrySchema, LogTemplateSchema
+from .schema import LogEntrySchema, LogTemplateSchema, ParsedLogSchema
 from src.models.log_parser import LogParserLLM
 from src.models.ollama import create_ollama_analyzer
 
 @pw.udf
-def parse_timestamp(timestamp_str: str) -> pw.DateTimeUtc:
+def parse_timestamp(timestamp_str: str) -> pw.DATE_TIME_UTC:
     """Parse timestamp string to Pathway UTC datetime."""
     try:
         dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        return pw.DateTimeUtc.from_python(dt)
+        return pw.DATE_TIME_UTC.from_python(dt)
     except (ValueError, AttributeError):
-        return pw.DateTimeUtc.from_python(datetime.utcnow())
+        return pw.DATE_TIME_UTC.from_python(datetime.now(UTC))
 
 class LogParsingPipeline:
     """Main pipeline for log parsing using Pathway."""

@@ -7,44 +7,47 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None) -> None:
+def setup_logging(
+    log_level: str = "INFO",
+    log_file: Optional[str] = None,
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+) -> None:
     """Set up logging configuration.
     
     Args:
-        log_level: The logging level to use (default: INFO)
-        log_file: Optional path to a log file. If provided, logs will be written to this file
-                 in addition to console output.
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_file: Optional path to log file
+        log_format: Format string for log messages
     """
-    # Create formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    # Convert string level to logging constant
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f"Invalid log level: {log_level}")
     
-    # Set up console handler
+    # Create handlers
+    handlers = []
+    
+    # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(logging.Formatter(log_format))
+    handlers.append(console_handler)
     
-    # Set up file handler if log file is provided
-    handlers = [console_handler]
+    # File handler if log_file specified
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        
         file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(logging.Formatter(log_format))
         handlers.append(file_handler)
     
     # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level.upper())
+    logging.basicConfig(
+        level=numeric_level,
+        handlers=handlers,
+        format=log_format
+    )
     
-    # Remove any existing handlers and add our handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-    for handler in handlers:
-        root_logger.addHandler(handler)
-    
-    # Set Pathway and other third-party loggers to WARNING level
-    logging.getLogger("pathway").setLevel(logging.WARNING)
+    # Set third-party loggers to WARNING level
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING) 
+    logging.getLogger("matplotlib").setLevel(logging.WARNING) 

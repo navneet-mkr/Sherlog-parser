@@ -6,25 +6,39 @@ The evaluation framework is designed to assess the performance of the log parsin
 
 ## Architecture
 
-```
-evaluation/
-├── UI Layer (src/eval/ui.py)
-│   ├── Dataset Selection
-│   ├── Model Configuration
-│   └── Results Visualization
-│
-├── Pipeline Layer (src/pathway_pipeline/eval_pipeline.py)
-│   ├── Template Matching
-│   ├── LLM Processing
-│   └── Metrics Calculation
-│
-└── Data Layer (src/eval/datasets/)
-    ├── Dataset Loading
-    ├── Ground Truth Management
-    └── Results Storage
-```
+The evaluation framework consists of three main layers:
+
+1. **Dataset Layer** (`src/eval/datasets.py`)
+   - Manages benchmark datasets
+   - Handles data loading and preprocessing
+   - Provides ground truth templates
+
+2. **Evaluation Layer** (`src/core/eval.py`)
+   - Implements the evaluation pipeline
+   - Processes logs in batches
+   - Calculates evaluation metrics
+
+3. **UI Layer** (`src/eval/ui.py`)
+   - Interactive dashboard
+   - Real-time progress tracking
+   - Results visualization
 
 ## Components
+
+1. **Dataset Management**:
+   - Support for multiple benchmark datasets
+   - Automatic dataset downloading
+   - Ground truth validation
+
+2. **Evaluation Pipeline**:
+   - Batch processing of log files
+   - Template extraction and matching
+   - Comprehensive metrics calculation
+
+3. **Results Analysis**:
+   - Accuracy metrics
+   - Performance metrics
+   - Template quality analysis
 
 ### 1. UI Layer (`src/eval/ui.py`)
 
@@ -43,36 +57,29 @@ The UI layer provides an interactive dashboard for running evaluations:
 - Template distribution visualization
 - Detailed results exploration
 
-### 2. Pipeline Layer (`src/pathway_pipeline/eval_pipeline.py`)
+### 2. Pipeline Layer (`src/core/eval.py`)
 
-The core evaluation pipeline implements a two-stage approach:
+The core evaluation pipeline implements a batch processing approach:
 
 1. **Template Matching Stage**:
 ```python
-# Using vector similarity search
-logs_with_matches = self.logs.join(
-    self.template_index.query(
-        self.logs.content,
-        k=1,
-        distance_threshold=self.similarity_threshold
-    ),
-    pw.left.content == pw.right.query
-)
+# Using semantic similarity matching
+for batch in log_batches:
+    # Match logs against existing templates
+    matches = template_matcher.find_matches(
+        batch,
+        similarity_threshold=self.similarity_threshold
+    )
 ```
 
 2. **LLM Processing Stage**:
 ```python
 # For unmatched logs, use LLM
-logs_without_matches = (
-    self.logs
-    .filter(lambda t: t.id not in logs_with_matches.id)
-    .select(
-        prompt=self._build_template_prompt(pw.this.content)
+for log in unmatched_logs:
+    template, params = parser.parse_log(
+        log.content,
+        log.id
     )
-    .select(
-        llm_response=self.model(pw.this.prompt)
-    )
-)
 ```
 
 ### 3. Data Layer

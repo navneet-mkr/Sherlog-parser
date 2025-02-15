@@ -23,48 +23,20 @@ The project follows a simple, streamlined architecture:
 
 ```
 src/
-├── pathway_pipeline/      # Main pipeline implementation
-│   ├── pipeline.py       # Log parsing pipeline
-│   ├── eval_pipeline.py  # Evaluation pipeline
-│   └── schema.py         # Data schemas
-│
-├── models/               # ML models and configuration
-│   ├── config.py        # Application settings
-│   ├── log_parser.py    # LLM-based log parser
-│   └── ollama.py        # Ollama integration
-│
-├── services/            # Web services
-│   ├── api/            # REST API
-│   └── ui/             # Streamlit interface
-│
-└── core/               # Core utilities
-    ├── errors.py       # Error definitions
-    ├── error_handler.py # Error handling
-    └── utils.py        # Utility functions
+├── core/               # Core functionality
+├── eval/              # Evaluation framework
+├── models/            # Model implementations
+├── ui/                # UI components
+└── utils/             # Utility functions
 ```
 
 ## ✨ Features
 
-- 🤖 **LLM-Powered Analysis**:
-  - Deep semantic understanding using Ollama models
-  - Support for multiple models (Mistral, Llama 2, CodeLlama)
-  - Efficient local inference with GPU acceleration
-
-- 🧠 **Intelligent Template Extraction**: 
-  - Automatic pattern recognition
-  - Variable identification
-  - Semantic similarity matching
-
-- ⚡ **High Performance**:
-  - 🚀 Fast local inference with Ollama
-  - 📊 Real-time streaming with Pathway
-  - 📦 Efficient vector similarity search
-
-- 🚀 **Production Ready**:
-  - 🛡️ Type-safe with Pydantic models
-  - ⚙️ Configurable via environment variables
-  - ✅ Extensive test coverage
-  - 🔄 Proper error handling and logging
+- 🤖 LLM-based log parsing
+- 🔍 Semantic template matching
+- 📊 Comprehensive evaluation metrics
+- 🎯 High accuracy and performance
+- 🔄 Efficient batch processing
 
 ## ⚙️ Configuration
 

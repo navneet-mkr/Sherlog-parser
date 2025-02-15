@@ -206,14 +206,19 @@ else
     docker compose up -d --build evaluation
 fi
 
+# Start evaluation
+echo -e "\n${BOLD}Running evaluation...${NC}"
+
+# Monitor evaluation progress
+echo -e "${YELLOW}Checking evaluation service and dataset...${NC}"
+
 # Wait for evaluation service
-echo -n "Waiting for evaluation service..."
 max_retries=30
 retry_count=0
 
 while [ $retry_count -lt $max_retries ]; do
     if curl -s -f "http://localhost:8502" > /dev/null 2>&1; then
-        echo -e "\n${GREEN}Evaluation service is ready!${NC}"
+        echo -e "${GREEN}✓ Evaluation service ready${NC}"
         break
     fi
     
@@ -230,9 +235,49 @@ if [ $retry_count -eq $max_retries ]; then
     exit 1
 fi
 
-echo -e "\n${GREEN}Evaluation pipeline is ready!${NC}"
-echo -e "\nAccess the evaluation dashboard at:"
-echo -e "http://localhost:8502"
+# Monitor evaluation progress
+echo -e "\n${YELLOW}Starting evaluation pipeline...${NC}"
+echo -e "You can view detailed progress at: ${GREEN}http://localhost:8502${NC}"
+
+# Monitor the evaluation container logs for progress
+container_name="log-parse-ai-evaluation-1"
+echo -e "\n${YELLOW}Evaluation Progress:${NC}"
+
+docker logs -f $container_name 2>&1 | while read -r line; do
+    if [[ $line == *"Initializing evaluator"* ]]; then
+        echo -e "${GREEN}✓ Initializing evaluation${NC}"
+    elif [[ $line == *"Dataset: "* ]]; then
+        echo -e "${GREEN}✓ Selected dataset: $line${NC}"
+    elif [[ $line == *"Loading dataset"* ]]; then
+        echo -e "${GREEN}✓ Loading dataset${NC}"
+    elif [[ $line == *"Loaded"*"logs"* ]]; then
+        echo -e "${GREEN}✓ Dataset loaded: $line${NC}"
+    elif [[ $line == *"Starting evaluation"* ]]; then
+        echo -e "${GREEN}✓ Starting evaluation pipeline${NC}"
+    elif [[ $line == *"Starting log parsing process"* ]]; then
+        echo -e "${GREEN}✓ Processing logs${NC}"
+    elif [[ $line == *"Processing"*"logs in"*"batches"* ]]; then
+        echo -e "${GREEN}✓ Batch processing: $line${NC}"
+    elif [[ $line == *"Overall Progress:"* ]]; then
+        echo -e "${YELLOW}$line${NC}"
+    elif [[ $line == *"Batch"*"complete"* ]]; then
+        echo -e "${GREEN}$line${NC}"
+    elif [[ $line == *"Calculating metrics"* ]]; then
+        echo -e "${GREEN}✓ Computing evaluation metrics${NC}"
+    elif [[ $line == *"Evaluation Results:"* ]]; then
+        echo -e "\n${GREEN}✓ Evaluation completed successfully!${NC}"
+        echo -e "\n${BOLD}Results:${NC}"
+        # Continue reading the next few lines to show metrics
+        for i in {1..4}; do
+            read -r metric_line
+            echo -e "${YELLOW}$metric_line${NC}"
+        done
+    elif [[ $line == *"error"* || $line == *"Error"* || $line == *"ERROR"* ]]; then
+        echo -e "${RED}$line${NC}"
+    fi
+done
+
+echo -e "\n${GREEN}View detailed results at: http://localhost:8502${NC}"
 
 # Show which Ollama instance is being used
 if [ "$USE_LOCAL_OLLAMA" = true ]; then
@@ -240,45 +285,6 @@ if [ "$USE_LOCAL_OLLAMA" = true ]; then
 else
     echo -e "\n${YELLOW}Using containerized Ollama instance${NC}"
 fi
-
-# Start evaluation
-echo -e "\n${BOLD}Running evaluation...${NC}"
-echo -e "${YELLOW}This may take a while depending on the dataset size${NC}"
-
-# Monitor evaluation progress
-while true; do
-    # Check if evaluation container is still running
-    if ! check_container_status "log-parse-ai-evaluation-1"; then
-        echo -e "\n${RED}Evaluation container stopped unexpectedly${NC}"
-        show_results
-        cleanup
-        exit 1
-    fi
-    
-    # Check container logs for errors
-    if ! monitor_container_logs "log-parse-ai-evaluation-1"; then
-        echo -e "\n${RED}Evaluation failed due to errors in container logs${NC}"
-        show_results
-        cleanup
-        exit 1
-    fi
-    
-    if [ -f "$RESULTS_FILE" ]; then
-        show_results
-        echo -e "\n${GREEN}Evaluation completed successfully!${NC}"
-        break
-    fi
-    
-    # Check for errors
-    if [ -f "$ERROR_LOG" ] && [ -s "$ERROR_LOG" ]; then
-        echo -e "\n${RED}Evaluation failed with errors:${NC}"
-        cat "$ERROR_LOG"
-        break
-    fi
-    
-    echo -n "."
-    sleep 5
-done
 
 # Keep containers running but allow for graceful shutdown
 echo -e "\n${YELLOW}Evaluation complete. Press Ctrl+C to stop and cleanup.${NC}"

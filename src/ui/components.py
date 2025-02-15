@@ -23,7 +23,7 @@ def show_connection_error(error_msg: str, container=st):
     The application will automatically retry connecting...
     """)
 
-def show_download_error(container, model_name: str, error_msg: str = None):
+def show_download_error(container, model_name: str, error_msg: Optional[str] = None):
     """Show download error with terminal command alternative."""
     container.error("### ❌ Download Failed")
     if error_msg:
@@ -86,12 +86,13 @@ def show_file_uploader() -> List:
     st.markdown("### Upload Log Files")
     st.info("📁 Supported file types: .log and .txt files")
     
-    return st.file_uploader(
+    files = st.file_uploader(
         "Choose log files",
         type=["log", "txt"],
         help="Upload log files to analyze patterns and templates",
         accept_multiple_files=True
     )
+    return files if files is not None else []
 
 def show_log_viewer(log_dir: str) -> None:
     """Show log file viewer component."""
@@ -130,17 +131,18 @@ def show_sidebar_info() -> None:
     """Show sidebar information."""
     st.sidebar.markdown("### About")
     st.sidebar.markdown("""
-    This application uses:
-    - 🔄 Pathway for streaming processing
-    - 🤖 Ollama for local LLM inference
-    - 📊 Vector similarity for template matching
-    """)
+    ## 🛠️ Technology Stack
     
-    st.sidebar.markdown("### Resources")
-    st.sidebar.markdown("""
-    - [Documentation](https://pathway.com/developers)
-    - [GitHub Repository](https://github.com/pathwaycom/llm-app)
-    - [Discord Community](https://discord.gg/pathway)
+    - 🤖 LLM-based log parsing
+    - 🔍 Semantic template matching
+    - 📊 Comprehensive evaluation metrics
+    - 🎯 High accuracy and performance
+    - 🔄 Efficient batch processing
+    
+    ## 📚 Resources
+    
+    - [Documentation](https://github.com/navneet-mkr/log-parse-ai)
+    - [GitHub Repository](https://github.com/navneet-mkr/log-parse-ai)
     """)
     
     st.sidebar.markdown("### Status")
@@ -179,4 +181,32 @@ def show_model_settings() -> Dict[str, float]:
             "temperature": temperature,
             "top_p": top_p,
             "top_k": top_k
-        } 
+        }
+
+def show_parsing_progress(total_logs: int, current_log: int, templates_found: int) -> None:
+    """Show detailed parsing progress.
+    
+    Args:
+        total_logs: Total number of logs to process
+        current_log: Current log being processed
+        templates_found: Number of unique templates found
+    """
+    # Progress bar
+    progress_bar = st.progress(0)
+    progress = current_log / total_logs if total_logs > 0 else 0
+    progress_bar.progress(progress)
+    
+    # Status metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Logs Processed", f"{current_log}/{total_logs}")
+    with col2:
+        st.metric("Progress", f"{progress * 100:.1f}%")
+    with col3:
+        st.metric("Templates Found", templates_found)
+    
+    # Current status
+    if current_log < total_logs:
+        st.info(f"🔄 Processing log {current_log + 1} of {total_logs}...")
+    else:
+        st.success("✅ Log parsing complete!") 

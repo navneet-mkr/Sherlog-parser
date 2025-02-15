@@ -4,12 +4,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
-from typing import Dict, Any, Type, Tuple, cast
+from typing import Dict, Any
 from dataclasses import asdict
 import logging
 import os
+import json
 
-from src.pathway_pipeline.eval_pipeline import EvaluationPipeline
+from src.core.eval import Evaluator
 from src.core.logging_config import setup_logging
 
 # Set up logging
@@ -105,65 +106,87 @@ def main():
     """Main UI application."""
     logger.info("Starting evaluation UI")
     st.set_page_config(
-        page_title="Log Parser Evaluation",
+        page_title="Log Parser Evaluation Results",
         page_icon="📊",
         layout="wide"
     )
     
-    st.title("Log Parser Evaluation Dashboard")
+    st.title("Log Parser Evaluation Results")
     st.markdown("""
-    This dashboard allows you to evaluate the log parsing pipeline against benchmark datasets.
-    Select a dataset and system to begin evaluation.
+    This dashboard displays the results of log parsing evaluations against benchmark datasets.
+    To run new evaluations, use the command line:
+    ```bash
+    ./evaluate.sh [options]
+    ```
     """)
     
-    init_session_state()
+    # Initialize evaluator
+    try:
+        logger.info("Initializing evaluator")
+        evaluator = Evaluator(
+            base_dir="./data/eval_datasets",
+            dataset_type="loghub_2k",
+            system="Apache",
+            llm_model=os.getenv("MODEL_NAME", "mistral"),
+            llm_api_base=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            output_dir="./output/eval",
+            cache_dir="./cache/eval"
+        )
+        
+        # Run evaluation if no results exist
+        dataset_name = f"Apache_loghub_2k"
+        metrics_file = Path("./output/eval") / f"{dataset_name}_metrics.json"
+        
+        if not metrics_file.exists():
+            logger.info("No existing results found, starting evaluation")
+            with st.spinner("Running evaluation..."):
+                metrics = evaluator.evaluate()
+                st.success("Evaluation complete!")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize evaluator: {str(e)}")
+        st.error(f"Failed to initialize evaluator: {str(e)}")
+        return
     
     # Dataset selection
-    system, dataset_type = show_dataset_selector()
+    system = st.selectbox(
+        "Select system",
+        ["Apache", "Hadoop", "HDFS", "Linux", "OpenStack", "Spark"]
+    )
     
-    # Model configuration
-    config = show_model_config()
+    dataset_type = st.selectbox(
+        "Select dataset type",
+        ["loghub_2k", "loghub_all"]
+    )
     
-    # Run evaluation
-    if st.button("Run Evaluation"):
-        logger.info(f"Starting evaluation for {system}/{dataset_type}")
-        try:
-            with st.spinner("Running evaluation..."):
-                pipeline = EvaluationPipeline(
-                    base_dir="./data/eval_datasets",
-                    dataset_type=dataset_type,
-                    system=system,
-                    llm_api_base=OLLAMA_BASE_URL,
-                    llm_model=OLLAMA_MODEL,
-                    similarity_threshold=config["similarity_threshold"],
-                    batch_size=config["batch_size"]
-                )
-                
-                pipeline.setup_pipeline()
-                metrics = pipeline.evaluate()
-                
-                # Load results
-                results_dir = Path("./output/eval")
-                templates_df = pd.read_csv(results_dir / f"{system}_{dataset_type}_templates.csv")
-                
-                st.session_state.results = {
-                    "metrics": asdict(metrics),
-                    "templates": templates_df
-                }
-                logger.info("Evaluation completed successfully")
+    # Load and show results if available
+    results_dir = Path("./output/eval")
+    dataset_name = f"{system}_{dataset_type}"
+    metrics_file = results_dir / f"{dataset_name}_metrics.json"
+    templates_file = results_dir / f"{dataset_name}_templates.csv"
+    
+    if metrics_file.exists() and templates_file.exists():
+        with open(metrics_file) as f:
+            metrics = json.load(f)
+        templates_df = pd.read_csv(templates_file)
         
-        except Exception as e:
-            error_msg = f"Evaluation failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            st.error(error_msg)
-            return
-    
-    # Show results if available
-    if st.session_state.results:
-        show_results(
-            st.session_state.results["metrics"],
-            st.session_state.results["templates"]
-        )
+        show_results(metrics, templates_df)
+    else:
+        st.warning(f"""
+        No evaluation results found for {dataset_name}.
+        
+        First, ensure you have the dataset downloaded:
+        ```bash
+        ./download_datasets.sh
+        ```
+        
+        Then run the evaluation:
+        ```bash
+        ./evaluate.sh
+        ```
+        
+        The results will appear here once the evaluation is complete.
+        """)
 
 if __name__ == "__main__":
     main() 

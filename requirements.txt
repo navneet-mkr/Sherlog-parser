@@ -4,11 +4,10 @@ pandas>=2.1.4
 scikit-learn>=1.3.2
 sentence-transformers>=2.2.2
 duckdb>=0.9.0
+pydantic>=2.5.2
+pydantic-settings>=2.1.0
 pydantic-ai==0.0.22
 ollama>=0.1.6
-protobuf>=4.25.1,<5.0.0
-pathway @ git+https://github.com/navneet-mkr/pathway.git
-# pathway-xpacks is now included in pathway core package
 litellm>=1.35.0
 
 # API and services

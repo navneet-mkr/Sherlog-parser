@@ -8,13 +8,7 @@ RUN apt-get update && apt-get install -y \
     make \
     cmake \
     git \
-    pkg-config \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install uv using pip
 RUN pip install uv
@@ -38,7 +32,6 @@ WORKDIR /app
 ENV PYTHONPATH=/app
 ENV LOG_LEVEL=INFO
 ENV RUST_LOG=info
-ENV PATHWAY_CACHE_DIR=/data/eval_cache/pathway
 
 # Start Streamlit for evaluation UI
 CMD ["streamlit", "run", "src/eval/ui.py", "--server.port=8501", "--server.address=0.0.0.0"] 

@@ -1,4 +1,4 @@
-"""Streamlit UI for log parsing application."""
+"""Streamlit interface for log analysis and visualization."""
 
 import os
 import logging
@@ -7,8 +7,21 @@ from typing import Optional
 
 import streamlit as st
 from pydantic import BaseModel
+import pandas as pd
+import plotly.express as px
+from cachetools import TTLCache, cached
+from datetime import timedelta
+import json
 
-from src.pathway_pipeline.pipeline import LogParsingPipeline, PipelineConfig
+from src.models.config import Settings
+from src.core.parser_service import ParserService
+from src.core.errors import (
+    error_handler,
+    FileError,
+    ParsingError,
+    ClusteringError
+)
+from src.core.logging_config import setup_logging
 from src.ui.components import (
     show_file_uploader,
     show_log_viewer,
@@ -16,8 +29,8 @@ from src.ui.components import (
     show_sidebar_info
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging
+setup_logging(log_level="INFO", log_file="logs/ui.log")
 logger = logging.getLogger(__name__)
 
 # Environment variables

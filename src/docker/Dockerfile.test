@@ -30,10 +30,11 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV LOG_LEVEL=INFO
-ENV OLLAMA_BASE_URL=http://localhost:11434
-ENV OLLAMA_MODEL=mistral
+ENV OLLAMA_BASE_URL=http://ollama:11434
+ENV MODEL_NAME=mistral
+ENV TEST_DATA_DIR=/data/test_data
+ENV OUTPUT_DIR=/data/test_output
 ENV RUST_LOG=info
-ENV PATHWAY_CACHE_DIR=/data/test_cache/pathway
 
 # Run tests
 CMD ["pytest", "tests/", "-v", "--cov=src", "--cov-report=term-missing"] 

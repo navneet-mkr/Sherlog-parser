@@ -12,7 +12,7 @@ eval/
 ├── metrics/
 │   └── metrics.py        # Evaluation metrics implementation
 ├── pipeline/
-│   └── eval_pipeline.py  # Pathway evaluation pipeline
+│   └── eval.py          # Evaluation pipeline implementation
 └── README.md            # This file
 ```
 
@@ -44,7 +44,7 @@ eval/
 
 ## 📊 Features
 
-- Real-time streaming processing with Pathway
+- Efficient batch processing
 - Support for multiple benchmark datasets
 - Comprehensive metrics calculation
 - Interactive results visualization

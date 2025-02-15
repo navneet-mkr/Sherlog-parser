@@ -90,6 +90,50 @@ pytest tests/test_ollama_integration.py -v
 pytest --cov=src --cov-report=term-missing tests/
 ```
 
+## 📊 Evaluation
+
+### Docker-based Evaluation
+```bash
+# Run evaluation with default settings
+./evaluate.sh
+
+# Use local Ollama instance
+./evaluate.sh --use-local-ollama
+
+# Custom Ollama host/port
+./evaluate.sh --ollama-host http://your-ollama-server --ollama-port 11434
+```
+
+### Local Evaluation (No Docker)
+You can also run evaluations directly on your local machine without Docker using the `evaluate_local.py` script:
+
+```bash
+# Run evaluation with default settings (Apache system, loghub_2k dataset)
+python evaluate_local.py
+
+# Evaluate specific system and dataset
+python evaluate_local.py --system Hadoop --dataset-type loghub_all
+
+# Launch the evaluation UI
+python evaluate_local.py --ui
+
+# Use custom Ollama port
+python evaluate_local.py --ollama-port 11435
+```
+
+The local evaluation script provides:
+- 🎨 Rich, colorful progress display
+- 📊 Detailed performance metrics
+- 🎯 Color-coded results based on performance thresholds
+- 📈 Summary statistics and overall performance score
+- 🖥️ Optional Streamlit UI for interactive analysis
+
+Requirements for local evaluation:
+- Python 3.8+
+- Local Ollama installation
+- Required Python packages (`pip install -r requirements.txt`)
+- Evaluation datasets in `data/eval_datasets/`
+
 ## 📋 Prerequisites
 
 - Docker and Docker Compose

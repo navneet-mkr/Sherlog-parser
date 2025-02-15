@@ -17,8 +17,9 @@ services:
       - LOG_LEVEL=INFO
       - RUST_LOG=info
       - PATHWAY_CACHE_DIR=/cache/pathway
-    depends_on:
-      - ollama
+    profiles:
+      - default
+      - with-ollama
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 10s
@@ -66,8 +67,9 @@ services:
       - LOG_LEVEL=INFO
       - RUST_LOG=info
       - PATHWAY_CACHE_DIR=/data/eval_cache/pathway
-    depends_on:
-      - ollama
+    profiles:
+      - default
+      - with-ollama
     networks:
       - app-network
 
@@ -85,10 +87,9 @@ services:
       - LOG_LEVEL=INFO
       - RUST_LOG=info
       - PATHWAY_CACHE_DIR=/data/test_cache/pathway
-    depends_on:
-      - ollama
     profiles:
       - test
+      - with-ollama
     networks:
       - app-network
 

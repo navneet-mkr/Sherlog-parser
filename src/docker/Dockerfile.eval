@@ -16,9 +16,16 @@ RUN apt-get update && apt-get install -y \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Install Python packages with pip
+# Install uv using pip
+RUN pip install uv
+
+# Set UV environment variables for better download reliability
+ENV UV_HTTP_TIMEOUT=300
+ENV UV_NETWORK_RETRIES=3
+
+# Install Python packages with uv
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache --requirements requirements.txt
 
 # Create necessary directories
 RUN mkdir -p /data/eval_datasets /data/eval_cache /output

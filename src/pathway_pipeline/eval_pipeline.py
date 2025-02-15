@@ -5,17 +5,26 @@ Evaluation pipeline implementation using Pathway.
 import json
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict
+from datetime import datetime
 import pandas as pd
 
 import pathway as pw
-from pathway.stdlib.ml.index import Index
-from pathway.stdlib.ml.embedding import SentenceTransformerEmbedder
-from pathway.stdlib.llm import LiteLLMChat
 
 from src.eval.datasets import DatasetLoader, LogDataset
 from src.eval.metrics import evaluate_parser_output, EvaluationMetrics
-from src.models.ollama import VariableType
+from src.models.log_parser import LogParserLLM
+from src.models.ollama import create_ollama_analyzer
+
+@pw.udf
+def parse_timestamp(timestamp_str: str) -> pw.DateTimeUtc:
+    """Parse timestamp string to Pathway UTC datetime."""
+    try:
+        dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        return pw.DateTimeUtc.from_python(dt)
+    except (ValueError, AttributeError):
+        # Return a default timestamp if parsing fails
+        return pw.DateTimeUtc.from_python(datetime.utcnow())
 
 class EvaluationPipeline:
     def __init__(
@@ -39,18 +48,17 @@ class EvaluationPipeline:
         self.similarity_threshold = similarity_threshold
         self.batch_size = batch_size
         
-        # Initialize embedder
-        self.embedder = SentenceTransformerEmbedder(
-            embedding_model,
-            call_kwargs={"show_progress_bar": False}
+        # Initialize Ollama analyzer
+        self.ollama_analyzer = create_ollama_analyzer(
+            base_url=llm_api_base,
+            model_id=llm_model.split('/')[-1],
+            config={"temperature": 0.1}
         )
         
-        # Initialize LLM
-        self.model = LiteLLMChat(
-            model=llm_model,
-            temperature=0,
-            api_base=llm_api_base,
-            format="json"
+        # Initialize log parser
+        self.log_parser = LogParserLLM(
+            ollama_client=self.ollama_analyzer,
+            similarity_threshold=similarity_threshold
         )
         
         # Load dataset
@@ -68,32 +76,13 @@ class EvaluationPipeline:
             dataset_type=self.dataset_type
         )
     
-    @pw.udf
-    def _build_template_prompt(self, content: str) -> str:
-        """Build prompt for template extraction."""
-        return f"""Extract a template and variables from this log message:
-{content}
-
-The template should replace variable parts with placeholders.
-Return a JSON object with:
-- template: the extracted template with <type> placeholders
-- variables: list of variable positions and types
-
-Example:
-Log: "2024-02-07 10:15:30 ERROR Connection failed from 192.168.1.100"
-{{"template": "<timestamp> ERROR Connection failed from <ip>",
-  "variables": [
-    {{"position": 0, "type": "timestamp"}},
-    {{"position": 4, "type": "ip"}}
-  ]
-}}"""
-
     def setup_pipeline(self) -> None:
         """Set up the Pathway evaluation pipeline."""
         # Convert dataset to Pathway table
         df = pd.DataFrame({
             'log_id': range(len(self.dataset.raw_logs)),
             'content': self.dataset.raw_logs,
+            'timestamp': [datetime.utcnow().isoformat() for _ in self.dataset.raw_logs],  # Add timestamps
             'ground_truth': [
                 self.dataset.ground_truth_templates[i]
                 for i in range(len(self.dataset.raw_logs))
@@ -101,78 +90,39 @@ Log: "2024-02-07 10:15:30 ERROR Connection failed from 192.168.1.100"
         })
         self.logs = pw.debug.table_from_pandas(df)
         
-        # Create template index from ground truth
-        unique_templates = list(set(self.dataset.ground_truth_templates.values()))
-        template_df = pd.DataFrame({
-            'template_id': range(len(unique_templates)),
-            'template': unique_templates
-        })
-        self.templates = pw.debug.table_from_pandas(template_df)
-        
-        # Create vector index using new API
-        self.template_index = Index(
-            self.templates.template,
-            self.templates,
-            embedder=self.embedder,
-            dimensions=self.embedder.get_embedding_dimension()
+        # Add parsed timestamp
+        self.logs = self.logs.select(
+            log_id=pw.this.log_id,
+            content=pw.this.content,
+            timestamp=parse_timestamp(pw.this.timestamp),
+            ground_truth=pw.this.ground_truth
         )
         
-        # Process logs
+        # Process logs through LogParserLLM
         self.results = self._process_logs()
         
     def _process_logs(self) -> pw.Table:
-        """Process logs and generate templates."""
-        # First try template matching with new API
-        logs_with_matches = self.logs.join(
-            self.template_index.query(
-                self.logs.content,
-                k=1,
-                distance_threshold=self.similarity_threshold
-            ),
-            pw.left.content == pw.right.query
-        )
+        """Process logs using LogParserLLM."""
+        # Process logs in batches
+        processed_logs = []
+        for i in range(0, len(self.dataset.raw_logs), self.batch_size):
+            batch = self.dataset.raw_logs[i:i + self.batch_size]
+            results = self.log_parser.process_logs(batch)
+            processed_logs.extend(results)
         
-        # For unmatched logs, use LLM
-        logs_without_matches = (
-            self.logs
-            .filter(lambda t: t.id not in logs_with_matches.id)
-            .select(
-                log_id=pw.this.log_id,
-                content=pw.this.content,
-                prompt=self._build_template_prompt(pw.this.content)
-            )
-            .select(
-                pw.this.log_id,
-                pw.this.content,
-                llm_response=self.model(pw.this.prompt)
-            )
-        )
+        # Convert results to DataFrame
+        results_df = pd.DataFrame({
+            'log_id': range(len(processed_logs)),
+            'content': self.dataset.raw_logs,
+            'predicted_template': [r.template for r in processed_logs],
+            'ground_truth': [
+                self.dataset.ground_truth_templates[i]
+                for i in range(len(processed_logs))
+            ],
+            'inference_time': [r.inference_time_ms for r in processed_logs]
+        })
         
-        # Combine results and evaluate
-        all_results = pw.Table.concat(
-            logs_with_matches.select(
-                log_id=pw.this.log_id,
-                content=pw.this.content,
-                predicted_template=pw.this.template,
-                ground_truth=pw.this.ground_truth,
-                inference_time=0.0  # Template matching is fast
-            ),
-            logs_without_matches.select(
-                log_id=pw.this.log_id,
-                content=pw.this.content,
-                predicted_template=pw.apply(
-                    lambda x: json.loads(x)["template"],
-                    pw.this.llm_response
-                ),
-                ground_truth=pw.this.ground_truth,
-                inference_time=pw.apply(
-                    lambda x: x.get("inference_time", 100.0),
-                    pw.this.llm_response
-                )
-            )
-        )
-        
-        return all_results
+        return pw.debug.table_from_pandas(results_df)
     
     def evaluate(self) -> EvaluationMetrics:
         """Evaluate the pipeline results."""

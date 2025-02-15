@@ -3,8 +3,7 @@ Schema definitions for the log parsing pipeline.
 """
 
 import pathway as pw
-from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 class LogEntrySchema(pw.Schema):
     """Schema for raw log entries."""
@@ -23,10 +22,10 @@ class LogTemplateSchema(pw.Schema):
 class ParsedLogSchema(pw.Schema):
     """Schema for parsed log entries."""
     content: str
-    timestamp: datetime
+    timestamp: pw.DateTimeUtc
     log_level: str
     source: str
     template_id: str
-    parsed_parameters: dict
+    parsed_parameters: Dict[str, str]
     event_type: str
     severity: Optional[str] 

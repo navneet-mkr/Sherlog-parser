@@ -9,7 +9,7 @@ from cachetools import TTLCache, cached
 from datetime import timedelta
 
 from src.models.config import Settings
-from src.core.pipeline import LogPipeline
+from src.pathway_pipeline.pipeline import LogParsingPipeline, PipelineConfig
 from src.core.errors import (
     error_handler,
     FileError,
@@ -23,36 +23,8 @@ CLUSTER_CACHE = TTLCache(maxsize=100, ttl=timedelta(minutes=5).total_seconds())
 # Initialize session state
 if 'pipeline' not in st.session_state:
     st.session_state.pipeline = None
-if 'clustering_state' not in st.session_state:
-    st.session_state.clustering_state = None
-
-@cached(CLUSTER_CACHE)
-@error_handler(
-    reraise=False,
-    exclude=[KeyboardInterrupt, SystemExit]
-)
-def get_cluster_info(cluster_id: int) -> Dict[str, Any]:
-    """Get cached cluster information.
-    
-    Args:
-        cluster_id: Cluster identifier
-        
-    Returns:
-        Dictionary containing cluster information
-        
-    Raises:
-        ClusteringError: If cluster information cannot be retrieved
-    """
-    try:
-        return st.session_state.clustering_state.get_cluster_info(cluster_id)
-    except Exception as e:
-        raise ClusteringError(
-            f"Failed to get cluster information",
-            details={
-                "cluster_id": cluster_id,
-                "error": str(e)
-            }
-        )
+if 'config' not in st.session_state:
+    st.session_state.config = None
 
 @error_handler(
     reraise=False,
@@ -61,7 +33,15 @@ def get_cluster_info(cluster_id: int) -> Dict[str, Any]:
 def initialize_pipeline() -> None:
     """Initialize the log processing pipeline."""
     settings = Settings()
-    st.session_state.pipeline = LogPipeline(settings=settings)
+    config = PipelineConfig(
+        input_dir=settings.upload_dir,
+        output_dir=settings.output_dir,
+        cache_dir=settings.cache_dir,
+        ollama_base_url=settings.ollama_base_url,
+        model_name=settings.model_name
+    )
+    st.session_state.config = config
+    st.session_state.pipeline = LogParsingPipeline(config)
 
 @error_handler(
     reraise=False,
@@ -82,18 +62,26 @@ def process_uploaded_file(uploaded_file) -> None:
         
     with st.spinner("Processing log file..."):
         try:
-            # Process the file
-            clustering_state = st.session_state.pipeline.process_file(uploaded_file)
-            st.session_state.clustering_state = clustering_state
+            # Save uploaded file
+            file_path = Path(st.session_state.config.input_dir) / uploaded_file.name
+            file_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Clear caches
-            CLUSTER_CACHE.clear()
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getvalue())
+            
+            # Process the file
+            st.session_state.pipeline.setup_pipeline()
+            st.session_state.pipeline.run()
             
             # Show success message
-            st.success(
-                f"Successfully processed {clustering_state.n_samples} log lines into "
-                f"{len(clustering_state.clusters)} clusters"
-            )
+            results_file = Path(st.session_state.config.output_dir) / "parsed_logs.csv"
+            if results_file.exists():
+                results_df = pd.read_csv(results_file)
+                n_templates = len(pd.unique(results_df['template_id']))
+                st.success(
+                    f"Successfully processed {len(results_df)} log lines into "
+                    f"{n_templates} templates"
+                )
             
         except Exception as e:
             raise FileError(
@@ -109,47 +97,59 @@ def process_uploaded_file(uploaded_file) -> None:
     on_error=ClusteringError,
     exclude=[KeyboardInterrupt, SystemExit]
 )
-def display_cluster_info(cluster_id: int) -> None:
-    """Display information about a specific cluster.
+def display_template_info(template_id: str) -> None:
+    """Display information about a specific template.
     
     Args:
-        cluster_id: Cluster identifier
+        template_id: Template identifier
         
     Raises:
-        ClusteringError: If cluster information cannot be displayed
+        ClusteringError: If template information cannot be displayed
     """
     try:
-        cluster_info = get_cluster_info(cluster_id)
+        # Read results
+        output_dir = Path(st.session_state.config.output_dir)
+        results_file = output_dir / "parsed_logs.csv"
+        templates_file = output_dir / "templates.csv"
         
-        st.subheader(f"Cluster {cluster_id}")
-        
-        # Display cluster statistics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Sample Count", cluster_info.size)
-        with col2:
-            if cluster_info.pattern:
-                st.metric("Pattern Confidence", f"{cluster_info.pattern.confidence:.2%}")
-        
-        # Display pattern if available
-        if cluster_info.pattern:
-            st.code(cluster_info.pattern.pattern, language="python")
+        if results_file.exists() and templates_file.exists():
+            results_df = pd.read_csv(results_file)
+            templates_df = pd.read_csv(templates_file)
             
-            # Show pattern matches
-            with st.expander("Pattern Matches"):
-                for line in cluster_info.sample_lines[:5]:
-                    st.text(line)
-        
-        # Show sample lines
-        with st.expander("Sample Log Lines"):
-            for line in cluster_info.sample_lines[:10]:
-                st.text(line)
+            # Get template data
+            template_logs = results_df[results_df['template_id'] == template_id]
+            template_info = templates_df[templates_df['template_id'] == template_id].iloc[0]
+            
+            st.subheader(f"Template {template_id}")
+            
+            # Display template statistics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Log Count", len(template_logs))
+            with col2:
+                st.metric("Template", template_info['template'])
+            
+            # Show template pattern
+            st.code(template_info['template'], language="text")
+            
+            # Show sample log lines
+            with st.expander("Sample Log Lines"):
+                for _, row in template_logs.head(10).iterrows():
+                    st.text(row['content'])
+                    
+            # Show variable distribution if available
+            if 'variables' in template_logs.columns:
+                with st.expander("Variable Analysis"):
+                    st.write("Variable Distributions:")
+                    for _, row in template_logs.head(5).iterrows():
+                        if row['variables']:
+                            st.json(row['variables'])
                 
     except Exception as e:
         raise ClusteringError(
-            "Failed to display cluster information",
+            "Failed to display template information",
             details={
-                "cluster_id": cluster_id,
+                "template_id": template_id,
                 "error": str(e)
             }
         )
@@ -161,7 +161,7 @@ def display_cluster_info(cluster_id: int) -> None:
 def main():
     """Main Streamlit application."""
     st.title("Sherlog-parser")
-    st.write("Upload a log file to analyze patterns and clusters.")
+    st.write("Upload a log file to analyze patterns and extract templates.")
     
     # File uploader
     uploaded_file = st.file_uploader(
@@ -173,17 +173,37 @@ def main():
     if uploaded_file:
         process_uploaded_file(uploaded_file)
         
-        if st.session_state.clustering_state:
-            # Display cluster selection
-            cluster_ids = list(st.session_state.clustering_state.clusters.keys())
-            selected_cluster = st.selectbox(
-                "Select cluster to view",
-                cluster_ids,
-                format_func=lambda x: f"Cluster {x}"
-            )
+        # Display results if available
+        if st.session_state.pipeline:
+            output_dir = Path(st.session_state.config.output_dir)
+            results_file = output_dir / "parsed_logs.csv"
+            templates_file = output_dir / "templates.csv"
             
-            if selected_cluster is not None:
-                display_cluster_info(selected_cluster)
+            if results_file.exists() and templates_file.exists():
+                # Read results
+                results_df = pd.read_csv(results_file)
+                templates_df = pd.read_csv(templates_file)
+                
+                # Template selection
+                template_ids = templates_df['template_id'].tolist()
+                selected_template = st.selectbox(
+                    "Select template to view",
+                    template_ids,
+                    format_func=lambda x: f"Template {x}"
+                )
+                
+                if selected_template:
+                    display_template_info(selected_template)
+                    
+                # Show template distribution
+                st.subheader("Template Distribution")
+                template_counts = results_df['template_id'].value_counts()
+                fig = px.bar(
+                    x=template_counts.index,
+                    y=template_counts.values,
+                    labels={'x': 'Template ID', 'y': 'Count'}
+                )
+                st.plotly_chart(fig)
 
 if __name__ == "__main__":
     main() 

@@ -1,6 +1,6 @@
 # 🔍 Sherlog-parser
 
-A powerful, intelligent log parsing and analysis tool that leverages Large Language Models (LLMs) and machine learning to automatically cluster, analyze, and extract patterns from log files.
+A powerful, intelligent log parsing and analysis tool that leverages Large Language Models (LLMs) and machine learning to automatically extract patterns and templates from log files.
 
 ## 🚀 Quick Start (2 minutes)
 
@@ -59,67 +59,21 @@ If you're upgrading from an older version:
 2. Clear the cache: `rm -rf cache/eval/*`
 3. Restart the evaluation service: `docker compose restart evaluation`
 
-The framework:
-- Uses Loghub-2k and LogPub benchmark datasets
-- Calculates metrics from the LogParser-LLM paper
-- Real-time streaming processing with Pathway
-- Supports multiple Ollama models
-- Caches results for faster re-evaluation
+## 🏗️ Architecture
 
-For detailed setup and usage instructions, see [Evaluation Framework Documentation](src/eval/README.md).
+The project follows a microservices architecture:
 
-## 🔄 Flexible Ollama Integration
-
-Choose how you want to use Ollama:
-
-1. **Automatic Detection** (Default):
-   - Script detects if local Ollama is running
-   - Prompts user to choose between local or containerized
-   - Handles model availability automatically
-   ```bash
-   ./start.sh
-   # or
-   ./evaluate.sh
-   ```
-
-2. **Local Installation**:
-   - Use your existing Ollama setup
-   - Share models with other applications
-   - Faster startup time
-   ```bash
-   ./start.sh --use-local-ollama
-   # or
-   ./evaluate.sh --use-local-ollama
-   ```
-
-3. **Remote Instance**:
-   - Connect to any Ollama server
-   - Share resources across network
-   - Custom configuration
-   ```bash
-   ./start.sh --ollama-host http://your-server --ollama-port 11434
-   # or
-   ./evaluate.sh --ollama-host http://your-server --ollama-port 11434
-   ```
-
-### Command Line Options
-
-Both `start.sh` and `evaluate.sh` support the following options:
-
-```bash
-Options:
-  --use-local-ollama     Use local Ollama instance instead of container
-  --ollama-host HOST     Specify custom Ollama host (default: http://localhost)
-  --ollama-port PORT     Specify custom Ollama port (default: 11434)
-  -h, --help            Show help message
 ```
-
-### Model Management
-
-The scripts handle model management automatically:
-- Detects if required models are available
-- Offers to pull missing models
-- Works with both local and containerized setups
+src/
+├── pathway_pipeline/    # Main pipeline implementation
+│   ├── pipeline.py     # Log parsing pipeline
+│   ├── eval_pipeline.py # Evaluation pipeline
+│   └── schema.py       # Data schemas
+│
+├── models/             # ML models and configuration
+├── services/           # Web services and API
+└── ui/                 # User interface
+```
 
 ## ✨ Features
 
@@ -127,8 +81,10 @@ The scripts handle model management automatically:
   - Deep semantic understanding using Ollama models
   - Support for multiple models (Mistral, Llama 2, CodeLlama)
   - Efficient local inference with GPU acceleration
-- 🧠 **Intelligent Log Clustering**: Uses embeddings and incremental clustering to group similar log messages
-- 🎯 **Pattern Extraction**: Automatically extracts regex patterns from log clusters
+- 🧠 **Intelligent Template Extraction**: 
+  - Automatic pattern recognition
+  - Variable identification
+  - Semantic similarity matching
 - ⚡ **High Performance**:
   - 🚀 Fast local inference with Ollama
   - 📊 Real-time streaming with Pathway
@@ -138,55 +94,6 @@ The scripts handle model management automatically:
   - ⚙️ Configurable via environment variables
   - ✅ Extensive test coverage
   - 🔄 Proper error handling and logging
-- 🔄 **Advanced Pipeline**:
-  - 🏗️ Built with Pathway for real-time processing
-  - 📊 Streaming architecture for scalability
-  - 🤖 Integrated model management
-  - 📝 Automatic template extraction
-
-## 🛠️ Quick Start with Docker
-
-The easiest way to get started is using Docker Compose:
-
-```bash
-# Start all services
-docker compose up -d
-
-# Access the interfaces:
-- Web UI: http://localhost:8501
-- Evaluation UI: http://localhost:8502
-- Ollama API: http://localhost:11434
-```
-
-### 🎮 Using the Application
-
-1. **🖥️ Access the Web UI**:
-   - Open your browser and go to `http://localhost:8501`
-   - Select a model from the available options
-   - Upload your log file using the file uploader
-   - Adjust analysis parameters if needed
-   - Click "Analyze Logs" to start processing
-
-2. **📊 Monitor Progress**:
-   - Watch real-time processing in the UI
-   - View extracted templates and patterns
-   - Export results and insights
-   - Access detailed metrics
-
-### 🤖 Model Management
-
-The application includes a built-in model management interface:
-
-1. **Available Models**:
-   - Mistral: Powerful open-source model for general tasks
-   - Llama 2: Meta's latest model optimized for chat
-   - CodeLlama: Specialized for code understanding
-
-2. **Model Operations**:
-   - Pull new models from Ollama
-   - View model details and parameters
-   - Delete unused models
-   - Monitor model status
 
 ## ⚙️ Configuration
 
@@ -194,34 +101,13 @@ Configuration is managed through environment variables in `.env`:
 
 ```bash
 # Ollama Settings
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=mistral
-OLLAMA_TIMEOUT=120
-
-# Pipeline Settings
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-SIMILARITY_THRESHOLD=0.8
-BATCH_SIZE=1000
+LOGPARSE_OLLAMA_BASE_URL=http://localhost:11434
+LOGPARSE_MODEL_NAME=mistral
+LOGPARSE_SIMILARITY_THRESHOLD=0.8
+LOGPARSE_BATCH_SIZE=32
 ```
 
-## 🏗️ Architecture
-
-The project follows a microservices architecture:
-
-1. **Web Interface**:
-   - Streamlit-based UI
-   - Real-time visualization
-   - Interactive analysis
-
-2. **Processing Pipeline**:
-   - Pathway streaming engine
-   - Vector similarity search
-   - Template extraction
-
-3. **Inference Service**:
-   - Ollama LLM integration
-   - Model management
-   - GPU acceleration
+See `src/models/config.py` for all available configuration options.
 
 ## 🧪 Testing
 
@@ -256,45 +142,6 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - 8GB+ RAM recommended
 - (Optional) Local Ollama installation if not using containerized version
 
-## 🛠️ Deployment Options
-
-### Using the Scripts
-
-Both `start.sh` and `evaluate.sh` provide flexible deployment options:
-
-```bash
-# Default setup (automatic Ollama detection)
-./start.sh
-./evaluate.sh
-
-# Use local Ollama instance
-./start.sh --use-local-ollama
-./evaluate.sh --use-local-ollama
-
-# Use custom Ollama host and port
-./start.sh --ollama-host http://my-ollama-server --ollama-port 12345
-./evaluate.sh --ollama-host http://my-ollama-server --ollama-port 12345
-```
-
-### Manual Configuration
-
-If you prefer manual configuration:
-
-1. Set environment variables:
-```bash
-export OLLAMA_BASE_URL=http://your-ollama-host:11434
-export OLLAMA_MODEL=mistral
-```
-
-2. Start services:
-```bash
-# With containerized Ollama
-docker compose --profile with-ollama up -d
-
-# Without Ollama container (using external instance)
-docker compose up -d streamlit evaluation
-```
-
 ## 📝 Usage
 
 1. Access the web interface at http://localhost:8501
@@ -305,23 +152,6 @@ docker compose up -d streamlit evaluation
    - Model settings
 4. Start analysis
 5. View results in real-time
-
-## 🔍 Monitoring & Management
-
-- View application logs:
-```bash
-docker compose logs -f
-```
-
-- Stop all services:
-```bash
-docker compose down
-```
-
-- Manage models through the UI:
-  - Pull new models
-  - Remove unused models
-  - View model details
 
 ## 🔧 Troubleshooting
 
@@ -340,177 +170,6 @@ docker compose down
    - Monitor resource usage
    - Consider using a more powerful machine for large logs
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
 ## 📄 License
 
-[Your License Here]
-
-## 📝 Usage Examples
-
-### 1. Local Development Setup
-```bash
-# Start with local Ollama for development
-./start.sh --use-local-ollama
-
-# In another terminal, run tests
-./evaluate.sh --use-local-ollama
-
-# Monitor logs
-docker compose logs -f streamlit
-```
-
-### 2. Production Deployment
-```bash
-# Start with GPU-enabled Ollama container
-NVIDIA_GPU=true ./start.sh
-
-# Or use existing Ollama cluster
-./start.sh --ollama-host http://ollama-cluster:11434
-
-# Scale services
-docker compose up -d --scale streamlit=3
-```
-
-### 3. Distributed Evaluation
-```bash
-# Run evaluation against multiple Ollama instances
-./evaluate.sh --ollama-host http://ollama1:11434
-./evaluate.sh --ollama-host http://ollama2:11434
-
-# Compare results
-python src/eval/compare_results.py output/eval/*_metrics.json
-```
-
-### 4. Common Use Cases
-
-1. **Processing Application Logs**:
-```bash
-# Process Nginx logs
-./start.sh
-# Upload /var/log/nginx/access.log
-# Select "HTTP Access Log" template
-
-# Process Java application logs
-./start.sh
-# Upload app.log
-# Select "Java Stack Trace" template
-```
-
-2. **Continuous Monitoring**:
-```bash
-# Start in monitoring mode
-./start.sh --use-local-ollama
-# Enable log file watching
-# Set alert thresholds
-# Configure Prometheus metrics
-```
-
-3. **Batch Processing**:
-```bash
-# Process multiple log files
-./start.sh
-# Upload directory of logs
-# Select batch processing mode
-# Export results to CSV/JSON
-```
-
-4. **Custom Model Integration**:
-```bash
-# Use custom Ollama model
-export OLLAMA_MODEL=your-custom-model
-./start.sh --use-local-ollama
-
-# Or with specific model parameters
-./start.sh --use-local-ollama
-# Configure in UI:
-# - Temperature: 0.1
-# - Top-P: 0.9
-# - Context length: 8192
-```
-
-### 5. Advanced Configurations
-
-1. **High-Performance Setup**:
-```bash
-# Use GPU acceleration
-export NVIDIA_GPU=true
-export BATCH_SIZE=2000
-./start.sh
-
-# Monitor performance
-nvidia-smi -l 1
-docker stats
-```
-
-2. **Secure Deployment**:
-```bash
-# Enable TLS
-export ENABLE_TLS=true
-export TLS_CERT=/path/to/cert
-export TLS_KEY=/path/to/key
-./start.sh
-
-# With authentication
-export ENABLE_AUTH=true
-export AUTH_CONFIG=/path/to/auth.yaml
-./start.sh
-```
-
-3. **Custom Pipeline Configuration**:
-```bash
-# Use custom embedding model
-export EMBEDDING_MODEL="custom/model"
-export SIMILARITY_THRESHOLD=0.85
-./start.sh
-
-# With custom cache settings
-export CACHE_DIR=/path/to/cache
-export CACHE_SIZE=10GB
-./start.sh
-```
-
-### 6. Integration Examples
-
-1. **With Existing Monitoring**:
-```bash
-# Export Prometheus metrics
-export ENABLE_METRICS=true
-./start.sh
-
-# In prometheus.yml:
-scrape_configs:
-  - job_name: 'log-parser'
-    static_configs:
-      - targets: ['localhost:8501']
-```
-
-2. **With Log Aggregation**:
-```bash
-# Forward to ELK stack
-export ELASTIC_URL=http://elasticsearch:9200
-./start.sh
-
-# With Loki
-export LOKI_URL=http://loki:3100
-./start.sh
-```
-
-3. **With CI/CD Pipeline**:
-```bash
-# In Jenkins pipeline
-stage('Log Analysis') {
-  steps {
-    sh '''
-      ./evaluate.sh --ollama-host $OLLAMA_HOST
-      python src/eval/check_metrics.py output/eval/*_metrics.json
-    '''
-  }
-}
-``` 
+[Your License Here] 

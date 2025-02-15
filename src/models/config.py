@@ -74,22 +74,63 @@ class OllamaSettings(BaseModel):
     timeout: int = Field(120, env='OLLAMA_TIMEOUT')
     model: str = Field("mistral", env='OLLAMA_MODEL')
 
-class Settings(BaseSettings):
-    """Application settings with environment variable support."""
-    ollama: OllamaSettings = Field(default_factory=OllamaSettings)
-    llm: LLMSettings = Field(default_factory=LLMSettings)
-    embedding_model: str = Field("all-MiniLM-L6-v2", env='EMBEDDING_MODEL')
-    similarity_threshold: float = Field(0.8, env='SIMILARITY_THRESHOLD')
-    batch_size: int = Field(1000, env='BATCH_SIZE')
+class Settings(BaseModel):
+    """Application settings."""
     
-    model_config = ConfigDict(env_file='.env', env_file_encoding='utf-8')
+    # Directory settings
+    upload_dir: str = Field(default="./data/uploads", description="Directory for uploaded files")
+    output_dir: str = Field(default="./output", description="Directory for output files")
+    cache_dir: str = Field(default="./cache", description="Directory for cache files")
     
+    # LLM settings
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        description="Base URL for Ollama API"
+    )
+    model_name: str = Field(
+        default="mistral",
+        description="Name of the LLM model to use"
+    )
+    
+    # Pipeline settings
+    similarity_threshold: float = Field(
+        default=0.8,
+        description="Threshold for template similarity matching",
+        ge=0.0,
+        le=1.0
+    )
+    batch_size: int = Field(
+        default=32,
+        description="Batch size for processing logs",
+        gt=0
+    )
+    
+    # File settings
+    encoding: str = Field(
+        default="utf-8",
+        description="Encoding for reading log files"
+    )
+    
+    # Database settings
+    db_path: str = Field(
+        default=":memory:",
+        description="Path to the database file"
+    )
+    persist_db: bool = Field(
+        default=True,
+        description="Whether to persist the database"
+    )
+    
+    class Config:
+        """Pydantic config."""
+        env_prefix = "LOGPARSE_"  # Environment variable prefix
+
     def get_llm_kwargs(self) -> dict:
         """Get kwargs for LLM provider initialization."""
         return {
-            "model": self.ollama.model,
-            "temperature": self.llm.temperature,
-            "top_k": self.llm.top_k,
-            "top_p": self.llm.top_p,
-            "repeat_penalty": self.llm.repeat_penalty
+            "model": self.ollama_base_url,
+            "temperature": self.model_name,
+            "top_k": self.batch_size,
+            "top_p": self.similarity_threshold,
+            "repeat_penalty": self.batch_size
         } 

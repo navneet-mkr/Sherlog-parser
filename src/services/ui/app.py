@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, Type, Tuple, cast
 from cachetools import TTLCache, cached
 from datetime import timedelta
+import logging
 
 from src.models.config import Settings
 from src.pathway_pipeline.pipeline import LogParsingPipeline, PipelineConfig
@@ -16,6 +17,11 @@ from src.core.errors import (
     ParsingError,
     ClusteringError
 )
+from src.core.logging_config import setup_logging
+
+# Set up logging
+setup_logging(log_level="INFO", log_file="logs/ui.log")
+logger = logging.getLogger(__name__)
 
 # Initialize caches
 CLUSTER_CACHE = TTLCache(maxsize=100, ttl=timedelta(minutes=5).total_seconds())
@@ -35,6 +41,7 @@ if 'config' not in st.session_state:
 )
 def initialize_pipeline() -> None:
     """Initialize the log processing pipeline."""
+    logger.info("Initializing pipeline")
     settings = Settings()
     config = PipelineConfig(
         input_dir=settings.upload_dir,
@@ -51,6 +58,7 @@ def initialize_pipeline() -> None:
         llm_api_base=config.ollama_base_url,
         llm_model=config.model_name
     )
+    logger.info("Pipeline initialized successfully")
 
 @error_handler(
     reraise=False,

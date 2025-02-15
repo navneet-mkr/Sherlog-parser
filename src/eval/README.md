@@ -183,8 +183,8 @@ python src/eval/compare_models.py \
 ### 3. Distributed Evaluation
 ```bash
 # Split evaluation across multiple instances
-./evaluate.sh --ollama-host http://ollama1:11434 --dataset-split 0-500
-./evaluate.sh --ollama-host http://ollama2:11434 --dataset-split 501-1000
+./evaluate.sh --ollama-host http://localhost:11434 --dataset-split 0-500
+./evaluate.sh --ollama-host http://localhost:11434 --dataset-split 501-1000
 
 # Merge results
 python src/eval/merge_results.py output/eval/split_*_metrics.json

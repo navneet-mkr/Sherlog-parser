@@ -193,8 +193,8 @@ output/eval/
 
 3. **Distributed Evaluation**:
    ```bash
-   ./evaluate.sh --ollama-host http://ollama1:11434
-   ./evaluate.sh --ollama-host http://ollama2:11434
+   ./evaluate.sh --ollama-host http://localhost:11434
+   ./evaluate.sh --ollama-host http://localhost:11434
    ```
 
 ## Integration Points

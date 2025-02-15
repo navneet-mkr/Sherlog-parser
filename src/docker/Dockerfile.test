@@ -30,7 +30,7 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV LOG_LEVEL=INFO
-ENV OLLAMA_BASE_URL=http://ollama:11434
+ENV OLLAMA_BASE_URL=http://localhost:11434
 ENV MODEL_NAME=mistral
 ENV TEST_DATA_DIR=/data/test_data
 ENV OUTPUT_DIR=/data/test_output

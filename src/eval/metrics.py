@@ -19,6 +19,8 @@ class EvaluationMetrics:
     total_logs: int
     unique_templates: int
     model_name: str
+    total_api_calls: int = 0
+    cache_hit_rate: float = 0.0
 
 def calculate_grouping_accuracy(ground_truth_groups: Dict[str, Set[int]], 
                               predicted_groups: Dict[str, Set[int]]) -> float:
@@ -137,8 +139,8 @@ def calculate_f1_scores(ground_truth_groups: Dict[str, Set[int]],
         y_pred.append(template_to_label[pred_template])
     
     # Calculate F1 scores
-    fga = f1_score(y_true, y_pred, average='micro')
-    fta = f1_score(y_true, y_pred, average='macro')
+    fga = float(f1_score(y_true, y_pred, average='micro'))
+    fta = float(f1_score(y_true, y_pred, average='macro'))
     
     return fga, fta
 
@@ -168,8 +170,8 @@ def calculate_granularity_distances(ground_truth_groups: Dict[str, Set[int]],
     pred_std = np.std(pred_sizes)
     
     # Calculate distances
-    ggd = abs(gt_mean - pred_mean) / max(gt_mean, pred_mean)
-    pgd = abs(gt_std - pred_std) / max(gt_std, pred_std)
+    ggd = float(abs(gt_mean - pred_mean) / float(max(float(gt_mean), float(pred_mean))))
+    pgd = float(abs(gt_std - pred_std) / float(max(float(gt_std), float(pred_std))))
     
     return ggd, pgd
 
@@ -205,13 +207,13 @@ def evaluate_parser_output(ground_truth_templates: Dict[int, str],
     ggd, pgd = calculate_granularity_distances(ground_truth_groups, predicted_groups)
     
     return EvaluationMetrics(
-        grouping_accuracy=ga,
-        parsing_accuracy=pa,
-        f1_grouping_accuracy=fga,
-        f1_template_accuracy=fta,
-        grouping_granularity_distance=ggd,
-        parsing_granularity_distance=pgd,
-        avg_inference_time_ms=np.mean(inference_times_ms),
+        grouping_accuracy=float(ga),
+        parsing_accuracy=float(pa),
+        f1_grouping_accuracy=float(fga),
+        f1_template_accuracy=float(fta),
+        grouping_granularity_distance=float(ggd),
+        parsing_granularity_distance=float(pgd),
+        avg_inference_time_ms=float(np.mean(inference_times_ms)),
         total_logs=len(ground_truth_templates),
         unique_templates=len(set(ground_truth_templates.values())),
         model_name=model_name

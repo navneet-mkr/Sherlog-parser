@@ -30,6 +30,8 @@ src/
 └── utils/             # Utility functions
 ```
 
+For detailed information about the log parsing algorithm, see [Algorithm Documentation](docs/algorithm.md).
+
 ## ✨ Features
 
 - 🤖 LLM-based log parsing
@@ -45,7 +47,7 @@ Configuration is managed through environment variables in `.env`:
 ```bash
 # Ollama Settings
 LOGPARSE_OLLAMA_BASE_URL=http://localhost:11434
-LOGPARSE_MODEL_NAME=mistral
+LOGPARSE_MODEL_NAME=qwen2.5-coder
 LOGPARSE_SIMILARITY_THRESHOLD=0.8
 LOGPARSE_BATCH_SIZE=32
 ```

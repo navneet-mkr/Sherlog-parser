@@ -27,7 +27,8 @@ class Evaluator:
         output_dir: str = "./output/eval",
         cache_dir: str = "./cache/eval",
         similarity_threshold: float = 0.8,
-        batch_size: int = 32
+        batch_size: int = 32,
+        track_api_calls: bool = False
     ):
         """Initialize evaluator.
         
@@ -41,6 +42,7 @@ class Evaluator:
             cache_dir: Directory for caching
             similarity_threshold: Threshold for template matching
             batch_size: Number of logs to process in each batch
+            track_api_calls: Whether to track API calls
         """
         logger.info("Initializing Evaluator")
         logger.info(f"Dataset: {system}/{dataset_type}")
@@ -50,6 +52,9 @@ class Evaluator:
         self.cache_dir = Path(cache_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.track_api_calls = track_api_calls
+        self.api_calls = 0
+        self.cache_hits = 0
         
         # Load dataset
         logger.info("Loading dataset")
@@ -65,7 +70,8 @@ class Evaluator:
             llm_model=llm_model,
             llm_api_base=llm_api_base,
             similarity_threshold=similarity_threshold,
-            batch_size=batch_size
+            batch_size=batch_size,
+            track_api_calls=track_api_calls
         )
     
     def evaluate(self) -> EvaluationMetrics:
@@ -100,8 +106,15 @@ class Evaluator:
             ground_truth_templates=self.dataset.ground_truth_templates,
             predicted_templates=predicted_templates,
             inference_times_ms=[0] * len(predicted_templates),  # Not measuring time in simplified version
-            model_name="simplified_parser"
+            model_name=self.parser.model_name
         )
+        
+        # Add API call metrics if tracking is enabled
+        if self.track_api_calls:
+            metrics_dict = asdict(metrics)
+            metrics_dict["total_api_calls"] = self.parser.get_api_calls()
+            metrics_dict["cache_hit_rate"] = self.parser.get_cache_hit_rate()
+            metrics = EvaluationMetrics(**metrics_dict)
         
         # Generate report
         self._generate_report(metrics, templates_df)
@@ -112,6 +125,9 @@ class Evaluator:
         logger.info(f"  Parsing Accuracy (PA): {metrics.parsing_accuracy:.4f}")
         logger.info(f"  F1 Grouping Accuracy (FGA): {metrics.f1_grouping_accuracy:.4f}")
         logger.info(f"  F1 Template Accuracy (FTA): {metrics.f1_template_accuracy:.4f}")
+        if self.track_api_calls:
+            logger.info(f"  Total API Calls: {metrics.total_api_calls}")
+            logger.info(f"  Cache Hit Rate: {metrics.cache_hit_rate:.1%}")
         
         return metrics
     

@@ -23,7 +23,8 @@ class ParserService:
         llm_model: str = "ollama/mistral",
         llm_api_base: str = "http://localhost:11434",
         similarity_threshold: float = 0.8,
-        batch_size: int = 32
+        batch_size: int = 32,
+        track_api_calls: bool = False
     ):
         """Initialize parser service.
         
@@ -32,6 +33,7 @@ class ParserService:
             llm_api_base: Base URL for LLM API
             similarity_threshold: Threshold for template matching
             batch_size: Number of logs to process in each batch
+            track_api_calls: Whether to track API calls
         """
         logger.info("Initializing ParserService")
         logger.info(f"Model: {llm_model}")
@@ -40,19 +42,25 @@ class ParserService:
         logger.info(f"Batch size: {batch_size}")
         
         self.batch_size = batch_size
+        self.track_api_calls = track_api_calls
+        self.model_name = llm_model
+        self.api_calls = 0
+        self.cache_hits = 0
         
         # Initialize Ollama analyzer
         logger.info("Initializing Ollama analyzer")
-        ollama_analyzer = create_ollama_analyzer(
+        self.analyzer = create_ollama_analyzer(
             base_url=llm_api_base,
-            model_id=llm_model.split('/')[-1],
-            config={"temperature": 0.1}
+            model_id=llm_model,
+            config={
+                "track_api_calls": track_api_calls
+            }
         )
         
         # Initialize LogParserLLM
         logger.info("Initializing LogParserLLM")
         self.parser = LogParserLLM(
-            ollama_client=ollama_analyzer,
+            ollama_client=self.analyzer,
             similarity_threshold=similarity_threshold
         )
         
@@ -290,4 +298,14 @@ class ParserService:
         report_file = output_dir / "parsing_report.md"
         with open(report_file, 'w') as f:
             f.write(report)
-        logger.info(f"Saved summary report to {report_file}") 
+        logger.info(f"Saved summary report to {report_file}")
+    
+    def get_api_calls(self) -> int:
+        """Get total number of API calls made."""
+        return self.analyzer.api_calls if self.track_api_calls else 0
+    
+    def get_cache_hit_rate(self) -> float:
+        """Get cache hit rate."""
+        if not self.track_api_calls or self.api_calls == 0:
+            return 0.0
+        return self.analyzer.cache_hits / self.analyzer.api_calls 

@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-import streamlit.cli as stcli
+import subprocess
 from dataclasses import asdict
 
 # Set up logging
@@ -46,16 +46,16 @@ def check_ollama():
             raise ConnectionError("Ollama is not running")
         
         tags = response.json()
-        if not any(tag.get('name') == 'mistral' for tag in tags.get('models', [])):
-            console.print("[yellow]Mistral model not found. Pulling...[/yellow]")
-            requests.post("http://localhost:11434/api/pull", json={"name": "mistral"})
+        if not any(tag.get('name') == 'qwen2.5-coder' for tag in tags.get('models', [])):
+            console.print("[yellow]Qwen2.5-Coder model not found. Pulling...[/yellow]")
+            requests.post("http://localhost:11434/api/pull", json={"name": "qwen2.5-coder"})
         return True
     except Exception as e:
         console.print(f"[red]Error connecting to Ollama: {str(e)}[/red]")
         console.print("\nPlease ensure Ollama is running:")
         console.print("1. Install Ollama from https://ollama.ai")
         console.print("2. Start Ollama service")
-        console.print("3. Pull the Mistral model: ollama pull mistral")
+        console.print("3. Pull the Qwen2.5-Coder model: ollama pull qwen2.5-coder")
         return False
 
 def check_datasets():
@@ -105,10 +105,11 @@ def run_evaluation(args):
             base_dir="./data/eval_datasets",
             dataset_type=args.dataset_type,
             system=args.system,
-            llm_model="mistral",
+            llm_model="qwen2.5-coder",
             llm_api_base=f"http://localhost:{args.ollama_port}",
             output_dir="./output/eval",
-            cache_dir="./cache/eval"
+            cache_dir="./cache/eval",
+            track_api_calls=True  # Enable API call tracking
         )
         progress.update(main_task, completed=10, status="[bold green]Evaluator loaded[/bold green]")
         
@@ -151,7 +152,10 @@ def run_evaluation(args):
             "Total Logs": metrics_dict["total_logs"],
             "Unique Templates": metrics_dict["unique_templates"],
             "Average Inference Time": f"{metrics_dict['avg_inference_time_ms']:.2f}ms",
-            "Model": metrics_dict["model_name"]
+            "Model": metrics_dict["model_name"],
+            "Total API Calls": metrics_dict.get("total_api_calls", 0),
+            "API Calls per Log": f"{metrics_dict.get('total_api_calls', 0) / metrics_dict['total_logs']:.2f}",
+            "Cache Hit Rate": f"{metrics_dict.get('cache_hit_rate', 0.0):.1%}"
         }
         
         # Display grouped metrics with enhanced colors
@@ -177,7 +181,27 @@ def run_evaluation(args):
         
         console.print("\n[bold magenta]📈 Statistics[/bold magenta]")
         for name, value in stats.items():
-            console.print(f"[cyan]{name}[/cyan][yellow]{'.' * (40 - len(name))}[/yellow][bold white]{value}[/bold white]")
+            # Color code API calls per log
+            if name == "API Calls per Log":
+                if float(value.split()[0]) <= 1.0:
+                    value_color = "green"
+                elif float(value.split()[0]) <= 2.0:
+                    value_color = "yellow"
+                else:
+                    value_color = "red"
+                console.print(f"[cyan]{name}[/cyan][yellow]{'.' * (40 - len(name))}[/yellow][bold {value_color}]{value}[/bold {value_color}]")
+            # Color code cache hit rate
+            elif name == "Cache Hit Rate":
+                hit_rate = float(value.strip('%')) / 100
+                if hit_rate >= 0.8:
+                    value_color = "green"
+                elif hit_rate >= 0.6:
+                    value_color = "yellow"
+                else:
+                    value_color = "red"
+                console.print(f"[cyan]{name}[/cyan][yellow]{'.' * (40 - len(name))}[/yellow][bold {value_color}]{value}[/bold {value_color}]")
+            else:
+                console.print(f"[cyan]{name}[/cyan][yellow]{'.' * (40 - len(name))}[/yellow][bold white]{value}[/bold white]")
         
         # Add a summary footer
         console.print("\n[yellow]" + "=" * 50 + "[/yellow]")
@@ -201,8 +225,14 @@ def run_ui():
         console.print("[red]UI script not found at src/eval/ui.py[/red]")
         return False
     
-    sys.argv = ["streamlit", "run", str(ui_script), "--server.port=8502"]
-    stcli.main()
+    try:
+        subprocess.run(["streamlit", "run", str(ui_script), "--server.port=8502"], check=True)
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to start UI: {str(e)}[/red]")
+        return False
+    except FileNotFoundError:
+        console.print("[red]Streamlit command not found. Please ensure streamlit is installed.[/red]")
+        return False
 
 def main():
     parser = argparse.ArgumentParser(description="Run log parser evaluation locally")

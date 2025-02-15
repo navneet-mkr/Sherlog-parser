@@ -18,9 +18,7 @@ services:
       - RUST_LOG=info
       - PATHWAY_CACHE_DIR=/cache/pathway
     depends_on:
-      ollama:
-        condition: service_healthy
-        optional: true
+      - ollama
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 10s
@@ -69,9 +67,7 @@ services:
       - RUST_LOG=info
       - PATHWAY_CACHE_DIR=/data/eval_cache/pathway
     depends_on:
-      ollama:
-        condition: service_healthy
-        optional: true
+      - ollama
     networks:
       - app-network
 
@@ -90,9 +86,7 @@ services:
       - RUST_LOG=info
       - PATHWAY_CACHE_DIR=/data/test_cache/pathway
     depends_on:
-      ollama:
-        condition: service_healthy
-        optional: true
+      - ollama
     profiles:
       - test
     networks:

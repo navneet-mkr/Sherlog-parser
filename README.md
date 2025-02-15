@@ -350,4 +350,167 @@ docker compose down
 
 ## 📄 License
 
-[Your License Here] 
+[Your License Here]
+
+## 📝 Usage Examples
+
+### 1. Local Development Setup
+```bash
+# Start with local Ollama for development
+./start.sh --use-local-ollama
+
+# In another terminal, run tests
+./evaluate.sh --use-local-ollama
+
+# Monitor logs
+docker compose logs -f streamlit
+```
+
+### 2. Production Deployment
+```bash
+# Start with GPU-enabled Ollama container
+NVIDIA_GPU=true ./start.sh
+
+# Or use existing Ollama cluster
+./start.sh --ollama-host http://ollama-cluster:11434
+
+# Scale services
+docker compose up -d --scale streamlit=3
+```
+
+### 3. Distributed Evaluation
+```bash
+# Run evaluation against multiple Ollama instances
+./evaluate.sh --ollama-host http://ollama1:11434
+./evaluate.sh --ollama-host http://ollama2:11434
+
+# Compare results
+python src/eval/compare_results.py output/eval/*_metrics.json
+```
+
+### 4. Common Use Cases
+
+1. **Processing Application Logs**:
+```bash
+# Process Nginx logs
+./start.sh
+# Upload /var/log/nginx/access.log
+# Select "HTTP Access Log" template
+
+# Process Java application logs
+./start.sh
+# Upload app.log
+# Select "Java Stack Trace" template
+```
+
+2. **Continuous Monitoring**:
+```bash
+# Start in monitoring mode
+./start.sh --use-local-ollama
+# Enable log file watching
+# Set alert thresholds
+# Configure Prometheus metrics
+```
+
+3. **Batch Processing**:
+```bash
+# Process multiple log files
+./start.sh
+# Upload directory of logs
+# Select batch processing mode
+# Export results to CSV/JSON
+```
+
+4. **Custom Model Integration**:
+```bash
+# Use custom Ollama model
+export OLLAMA_MODEL=your-custom-model
+./start.sh --use-local-ollama
+
+# Or with specific model parameters
+./start.sh --use-local-ollama
+# Configure in UI:
+# - Temperature: 0.1
+# - Top-P: 0.9
+# - Context length: 8192
+```
+
+### 5. Advanced Configurations
+
+1. **High-Performance Setup**:
+```bash
+# Use GPU acceleration
+export NVIDIA_GPU=true
+export BATCH_SIZE=2000
+./start.sh
+
+# Monitor performance
+nvidia-smi -l 1
+docker stats
+```
+
+2. **Secure Deployment**:
+```bash
+# Enable TLS
+export ENABLE_TLS=true
+export TLS_CERT=/path/to/cert
+export TLS_KEY=/path/to/key
+./start.sh
+
+# With authentication
+export ENABLE_AUTH=true
+export AUTH_CONFIG=/path/to/auth.yaml
+./start.sh
+```
+
+3. **Custom Pipeline Configuration**:
+```bash
+# Use custom embedding model
+export EMBEDDING_MODEL="custom/model"
+export SIMILARITY_THRESHOLD=0.85
+./start.sh
+
+# With custom cache settings
+export CACHE_DIR=/path/to/cache
+export CACHE_SIZE=10GB
+./start.sh
+```
+
+### 6. Integration Examples
+
+1. **With Existing Monitoring**:
+```bash
+# Export Prometheus metrics
+export ENABLE_METRICS=true
+./start.sh
+
+# In prometheus.yml:
+scrape_configs:
+  - job_name: 'log-parser'
+    static_configs:
+      - targets: ['localhost:8501']
+```
+
+2. **With Log Aggregation**:
+```bash
+# Forward to ELK stack
+export ELASTIC_URL=http://elasticsearch:9200
+./start.sh
+
+# With Loki
+export LOKI_URL=http://loki:3100
+./start.sh
+```
+
+3. **With CI/CD Pipeline**:
+```bash
+# In Jenkins pipeline
+stage('Log Analysis') {
+  steps {
+    sh '''
+      ./evaluate.sh --ollama-host $OLLAMA_HOST
+      python src/eval/check_metrics.py output/eval/*_metrics.json
+    '''
+  }
+}
+``` 

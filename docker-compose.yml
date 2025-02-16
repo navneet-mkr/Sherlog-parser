@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   streamlit:
     build:
@@ -90,8 +92,30 @@ services:
     networks:
       - app-network
 
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescaledb
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=logs
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      # Mount custom PostgreSQL configuration if needed
+      # - ./docker/timescaledb/postgresql.conf:/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   ollama_data:
+  timescaledb_data:
+    name: timescaledb_data
 
 networks:
   app-network:

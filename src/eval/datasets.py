@@ -315,10 +315,11 @@ class DatasetLoader:
             dataset_type: Dataset type (e.g., 'loghub_2k')
             
         Returns:
-            DataFrame with 'Content' column containing raw logs
+            DataFrame with 'Content' column containing only the raw log messages
         """
         log_file = self.base_dir / f"{dataset_type}" / system / f"{system}_2k.log_structured.csv"
-        return pd.read_csv(log_file, names=['Content'], encoding='utf-8')
+        df = pd.read_csv(log_file, encoding='utf-8')
+        return pd.DataFrame({'Content': df['Content']})
     
     def load_templates(self, system: str, dataset_type: str) -> pd.DataFrame:
         """Load ground truth templates.
@@ -330,7 +331,7 @@ class DatasetLoader:
         Returns:
             DataFrame with 'EventTemplate' column containing templates
         """
-        template_file = self.base_dir / "eval_datasets" / f"{dataset_type}" / system / f"{system}_2k.log_templates.csv"
+        template_file = self.base_dir / f"{dataset_type}" / system / f"{system}_2k.log_templates.csv"
         return pd.read_csv(template_file)
 
 # Default test datasets for initial development

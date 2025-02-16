@@ -16,6 +16,10 @@ uvicorn>=0.27.0
 streamlit>=1.29.0
 click>=8.1.7
 
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.25
+
 # Visualization
 plotly>=5.18.0
 

@@ -27,61 +27,61 @@ class ParserService:
         track_api_calls: bool = False,
         cache_dir: str = "./cache"
     ):
-        """Initialize parser service.
+        """Initialize the parser service.
         
         Args:
             llm_model: Name of the LLM model to use
-            llm_api_base: Base URL for LLM API
-            similarity_threshold: Threshold for template matching
-            batch_size: Number of logs to process in each batch
+            llm_api_base: Base URL for the LLM API
+            similarity_threshold: Threshold for template similarity matching
+            batch_size: Size of batches for processing logs
             track_api_calls: Whether to track API calls
-            cache_dir: Directory for caching API calls
+            cache_dir: Directory for caching results
         """
-        logger.info("Initializing ParserService")
-        logger.info(f"Model: {llm_model}")
-        logger.info(f"API base: {llm_api_base}")
-        logger.info(f"Similarity threshold: {similarity_threshold}")
-        logger.info(f"Batch size: {batch_size}")
-        
+        self.llm_model = llm_model
+        self.llm_api_base = llm_api_base
+        self.similarity_threshold = similarity_threshold
         self.batch_size = batch_size
         self.track_api_calls = track_api_calls
-        self.model_name = llm_model
-        self.api_calls = 0
-        self.cache_hits = 0
         self.cache_dir = Path(cache_dir)
         
-        # Initialize Ollama analyzer
-        logger.info("Initializing Ollama analyzer")
+        # Create cache directory if it doesn't exist
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize LLM analyzer
         self.analyzer = create_ollama_analyzer(
-            base_url=llm_api_base,
-            model_id=llm_model,
-            config={
-                "track_api_calls": track_api_calls
+            llm_api_base,
+            llm_model,
+            {
+                "track_api_calls": track_api_calls,
+                "cache_dir": str(cache_dir)
             }
         )
         
-        # Initialize LogParserLLM
-        logger.info("Initializing LogParserLLM")
+        # Initialize log parser
         self.parser = LogParserLLM(
-            ollama_client=self.analyzer,
+            self.analyzer,
             similarity_threshold=similarity_threshold
         )
-        
+
     def parse_logs(
         self,
         log_file: str,
         output_dir: str,
         template_file: Optional[str] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Parse logs from a file.
+        """Parse logs from a file and save results.
         
         Args:
-            log_file: Path to log file
+            log_file: Path to the log file
             output_dir: Directory to save results
             template_file: Optional path to existing templates file
             
         Returns:
-            Tuple of (parsed_logs DataFrame, templates DataFrame)
+            Tuple of (parsed logs DataFrame, templates DataFrame)
+            
+        Raises:
+            FileNotFoundError: If log file not found
+            ValueError: If log file is empty or invalid
         """
         logger.info(f"Starting log parsing process for: {log_file}")
         output_path = Path(output_dir)
@@ -202,13 +202,17 @@ class ParserService:
             return parsed_logs_df, templates_df
     
     def _read_logs(self, log_file: str) -> pd.DataFrame:
-        """Read logs from file.
+        """Read logs from file into DataFrame.
         
         Args:
             log_file: Path to log file
             
         Returns:
-            DataFrame with log entries
+            DataFrame containing logs
+            
+        Raises:
+            FileNotFoundError: If file not found
+            ValueError: If file is empty or invalid
         """
         logger.info(f"Reading log file: {log_file}")
         try:
@@ -231,29 +235,24 @@ class ParserService:
             return df
     
     def _infer_event_type(self, template: str) -> str:
-        """Infer event type from template.
+        """Infer the type of event from a log template.
         
         Args:
             template: Log template string
             
         Returns:
-            Inferred event type
+            Inferred event type (INFO, ERROR, WARNING, etc.)
         """
-        template_lower = template.lower()
-        
-        if any(word in template_lower for word in ['error', 'fail', 'exception']):
-            event_type = 'error'
-        elif any(word in template_lower for word in ['warn', 'warning']):
-            event_type = 'warning'
-        elif any(word in template_lower for word in ['info', 'status']):
-            event_type = 'info'
-        elif any(word in template_lower for word in ['debug']):
-            event_type = 'debug'
-        else:
-            event_type = 'unknown'
-            
-        logger.debug(f"Inferred event type '{event_type}' for template: {template}")
-        return event_type
+        template = template.upper()
+        if "ERROR" in template or "FAIL" in template:
+            return "ERROR"
+        elif "WARN" in template:
+            return "WARNING"
+        elif "DEBUG" in template:
+            return "DEBUG"
+        elif "INFO" in template:
+            return "INFO"
+        return "UNKNOWN"
     
     def _save_results(
         self,
@@ -261,11 +260,11 @@ class ParserService:
         templates_df: pd.DataFrame,
         output_dir: Path
     ) -> None:
-        """Save parsing results.
+        """Save parsing results to files.
         
         Args:
-            parsed_logs_df: DataFrame with parsed logs
-            templates_df: DataFrame with templates
+            parsed_logs_df: DataFrame of parsed logs
+            templates_df: DataFrame of extracted templates
             output_dir: Directory to save results
         """
         # Save parsed logs
@@ -304,14 +303,23 @@ class ParserService:
         logger.info(f"Saved summary report to {report_file}")
     
     def get_api_calls(self) -> int:
-        """Get total number of API calls made."""
+        """Get the number of API calls made.
+        
+        Returns:
+            Number of API calls
+        """
         return self.analyzer.api_calls if self.track_api_calls else 0
     
     def get_cache_hit_rate(self) -> float:
-        """Get cache hit rate."""
-        if not self.track_api_calls or self.api_calls == 0:
+        """Get the cache hit rate.
+        
+        Returns:
+            Cache hit rate as a float between 0 and 1
+        """
+        if not self.track_api_calls:
             return 0.0
-        return self.analyzer.cache_hits / self.analyzer.api_calls
+        total = self.analyzer.api_calls + self.analyzer.cache_hits
+        return self.analyzer.cache_hits / total if total > 0 else 0.0
     
     def parse_logs_batch(
         self,
@@ -322,11 +330,11 @@ class ParserService:
         """Parse a batch of logs in parallel.
         
         Args:
-            logs: List of (log_message, log_id) tuples
-            batch_size: Size of batches for LLM processing
+            logs: List of (log message, log ID) tuples
+            batch_size: Size of batches for processing
             max_workers: Maximum number of parallel workers
             
         Returns:
-            List of (template, parameters) tuples for each log
+            List of (template, parameters) tuples
         """
         return self.parser.parse_logs_batch(logs, batch_size, max_workers) 

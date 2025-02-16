@@ -317,7 +317,7 @@ class DatasetLoader:
         Returns:
             DataFrame with 'Content' column containing raw logs
         """
-        log_file = self.base_dir / "eval_datasets" / f"{dataset_type}" / system / f"{system}_2k.log"
+        log_file = self.base_dir / f"{dataset_type}" / system / f"{system}_2k.log_structured.csv"
         return pd.read_csv(log_file, names=['Content'], encoding='utf-8')
     
     def load_templates(self, system: str, dataset_type: str) -> pd.DataFrame:

@@ -138,4 +138,5 @@ EventTemplate_2: {{parse result for Log_2}}
 ...
 Reason: {{brief reason whether they should be unified}}
 Answer: {{"Yes" or "No"}}
-Unified Template: {{one unified template if yes. "None" if the answer is no}}""" 
+Unified Template: {{one unified template if yes. Make
+sure there are static parts in the template. "None" if the answer is no}}""" 

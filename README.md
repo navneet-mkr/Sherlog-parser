@@ -5,6 +5,13 @@ A powerful, intelligent log parsing and analysis tool that leverages Large Langu
 ## 🚀 Quick Start (2 minutes)
 
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/sherlog-parser.git
+cd sherlog-parser
+
+# Install dependencies (with development tools)
+pip install -e ".[dev]"
+
 # Start with automatic Ollama configuration
 ./start.sh
 
@@ -17,18 +24,35 @@ A powerful, intelligent log parsing and analysis tool that leverages Large Langu
 
 That's it! Access the web interface at http://localhost:8501 🎉
 
-## 🏗️ Architecture
+## 🏗️ Project Structure
 
-The project follows a simple, streamlined architecture:
+The project follows a clean, modular architecture:
 
 ```
-src/
-├── core/               # Core functionality
-├── eval/              # Evaluation framework
-├── models/            # Model implementations
-├── ui/                # UI components
-└── utils/             # Utility functions
+sherlog-parser/
+├── src/                    # Source code
+│   ├── core/              # Core functionality and common utilities
+│   ├── models/            # Model implementations
+│   ├── eval/              # Evaluation framework
+│   ├── ui/                # UI components
+│   ├── prompts/           # LLM prompt templates
+│   ├── config/            # Configuration management
+│   └── services/          # Service layer implementations
+├── tests/                 # Test suite
+├── docs/                  # Documentation
+├── docker/               # Docker configuration
+├── config.yaml           # Main configuration file
+├── .env                  # Environment variables
+└── requirements.txt      # Python dependencies
 ```
+
+### Key Components
+
+- **Core Module**: Common utilities and core functionality
+- **Models**: Implementations of different log parsing models
+- **Evaluation**: Comprehensive evaluation framework with metrics
+- **Configuration**: Centralized configuration management
+- **Services**: Business logic and service implementations
 
 For detailed information about the log parsing algorithm, see [Algorithm Documentation](docs/algorithm.md).
 
@@ -39,60 +63,98 @@ For detailed information about the log parsing algorithm, see [Algorithm Documen
 - 📊 Comprehensive evaluation metrics
 - 🎯 High accuracy and performance
 - 🔄 Efficient batch processing
+- 🔧 Modular and extensible architecture
+- 📝 Type-safe configuration management
 
 ## ⚙️ Configuration
 
-Configuration is managed through environment variables in `.env`:
+Configuration is managed through a hierarchical system:
+
+1. **Environment Variables** (`.env`):
+   ```bash
+   ENVIRONMENT=development
+   DEBUG=false
+   OPENAI_API_KEY=your-key
+   ANTHROPIC_API_KEY=your-key
+   ```
+
+2. **Application Config** (`config.yaml`):
+   ```yaml
+   model:
+     name: qwen2.5-coder
+     temperature: 0.1
+     max_tokens: 100
+   
+   parser:
+     similarity_threshold: 0.8
+     max_template_length: 200
+   
+   processing:
+     batch_size: 32
+     max_workers: 4
+   ```
+
+3. **Development Settings**:
+   ```bash
+   # Install development dependencies
+   pip install -e ".[dev]"
+   
+   # Install documentation tools
+   pip install -e ".[docs]"
+   ```
+
+## 🧪 Testing and Quality Assurance
 
 ```bash
-# Ollama Settings
-LOGPARSE_OLLAMA_BASE_URL=http://localhost:11434
-LOGPARSE_MODEL_NAME=qwen2.5-coder
-LOGPARSE_SIMILARITY_THRESHOLD=0.8
-LOGPARSE_BATCH_SIZE=32
+# Run all tests with coverage
+pytest --cov=src tests/
+
+# Run type checking
+mypy src/
+
+# Format code
+black src/ tests/
+isort src/ tests/
+
+# Lint code
+pylint src/ tests/
 ```
 
-See `src/models/config.py` for all available configuration options.
-
 ## 📝 Usage
+
+### Web Interface
 
 1. Access the web interface at http://localhost:8501
 2. Upload a log file (.log or .txt)
 3. Select processing parameters:
-   - Similarity threshold
-   - Batch size
-   - Model settings
+   - Model configuration
+   - Parser settings
+   - Processing options
 4. Start analysis
 5. View results in real-time
 
 ### API Access
 
-The system also provides a REST API for programmatic access:
+The system provides a REST API for programmatic access:
 
-```bash
-# Get all templates
-GET /templates
+```python
+from sherlog_parser.client import LogParserClient
 
-# Get logs for a specific template
-GET /logs/{template_id}
+# Initialize client
+client = LogParserClient()
+
+# Parse logs
+templates = client.parse_logs("path/to/logfile.log")
+
+# Get template details
+template_logs = client.get_logs(template_id="template_123")
 ```
 
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-# Run all tests
-pytest tests/
-
-# Run specific tests
-pytest tests/test_ollama_integration.py -v
-
-# Run with coverage
-pytest --cov=src --cov-report=term-missing tests/
-```
+For API documentation, see [API Reference](docs/api.md).
 
 ## 📊 Evaluation
+
+The project includes a comprehensive evaluation framework:
 
 ### Docker-based Evaluation
 ```bash
@@ -107,7 +169,7 @@ pytest --cov=src --cov-report=term-missing tests/
 ```
 
 ### Local Evaluation (No Docker)
-You can also run evaluations directly on your local machine without Docker using the `evaluate_local.py` script:
+You can run evaluations directly on your local machine without Docker using the `evaluate_local.py` script:
 
 ```bash
 # Run evaluation with default settings (Apache system, loghub_2k dataset)
@@ -123,66 +185,75 @@ python evaluate_local.py --ui
 python evaluate_local.py --ollama-port 11435
 ```
 
-The local evaluation script provides:
-- 🎨 Rich, colorful progress display
-- 📊 Detailed performance metrics
-- 🎯 Color-coded results based on performance thresholds
-- 📈 Summary statistics and overall performance score
-- 🖥️ Optional Streamlit UI for interactive analysis
-
-Requirements for local evaluation:
-- Python 3.8+
-- Local Ollama installation
-- Required Python packages (`pip install -r requirements.txt`)
-- Evaluation datasets in `data/eval_datasets/`
+The evaluation framework provides:
+- 📊 Comprehensive metrics calculation
+- 📈 Performance analysis
+- 🎯 Template matching accuracy
+- 🔍 Detailed error analysis
+- 📋 Automated report generation
 
 ## 📋 Prerequisites
 
-- Docker and Docker Compose
+- Python 3.9+
+- Docker and Docker Compose (for containerized deployment)
 - 8GB+ RAM recommended
-- (Optional) Local Ollama installation if not using containerized version
+- (Optional) CUDA-capable GPU for improved performance
+- (Optional) Local Ollama installation
 
 ## 🔧 Troubleshooting
 
-1. **Ollama Connection Issues**
-   - Check if Ollama is running at the specified host/port
-   - Verify network connectivity
-   - Check system resources
+1. **Configuration Issues**
+   - Verify environment variables in `.env`
+   - Check `config.yaml` settings
+   - Ensure proper API keys are set
 
-2. **Service Health**
-   - Monitor service status in the UI
-   - Check Docker logs for errors
-   - Verify port availability
+2. **Model Problems**
+   - Verify model availability in Ollama
+   - Check model configuration
+   - Monitor resource usage
 
 3. **Performance Issues**
-   - Adjust batch size based on available memory
-   - Monitor resource usage
-   - Consider using a more powerful machine for large logs
+   - Adjust batch size and worker count
+   - Monitor memory usage
+   - Consider GPU acceleration
+
+4. **Development Setup**
+   - Install development dependencies: `pip install -e ".[dev]"`
+   - Run linting and type checking
+   - Verify test coverage
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch
+3. Install development dependencies: `pip install -e ".[dev]"`
+4. Make your changes
+5. Run tests and linting
+6. Submit a pull request
+
+See [Contributing Guide](CONTRIBUTING.md) for detailed guidelines.
+
+## 📚 Documentation
+
+- [API Reference](docs/api.md)
+- [Algorithm Details](docs/algorithm.md)
+- [Configuration Guide](docs/configuration.md)
+- [Development Guide](docs/development.md)
+
+Build documentation locally:
+```bash
+# Install documentation tools
+pip install -e ".[docs]"
+
+# Build docs
+mkdocs build
+
+# Serve docs locally
+mkdocs serve
+```
 
 ## 📄 License
 
-MIT License
-
-Copyright (c) 2024 Sherlog-parser
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE. 
+MIT License - see [LICENSE](LICENSE) for details. 

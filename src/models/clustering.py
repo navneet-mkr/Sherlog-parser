@@ -1,7 +1,7 @@
 """Pydantic models for clustering."""
 
-from typing import Dict, List, Optional, Union
-from pydantic import BaseModel, Field, validator
+from typing import Dict, List, Optional, Union, Any, cast
+from pydantic import BaseModel, Field, field_validator, BeforeValidator
 from datetime import datetime
 import numpy as np
 import re
@@ -14,8 +14,9 @@ class ClusterPattern(BaseModel):
     sample_count: int = Field(..., ge=0, description="Number of samples used to generate pattern")
     created_at: datetime = Field(default_factory=datetime.now, description="Pattern creation timestamp")
     
-    @validator("pattern")
-    def validate_pattern(cls, v):
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, v: str) -> str:
         """Validate that pattern is a valid regex."""
         try:
             re.compile(v)
@@ -33,20 +34,26 @@ class ClusterInfo(BaseModel):
     sample_lines: List[str] = Field(default_factory=list, description="Sample log lines")
     last_update: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
     
-    class Config:
-        """Pydantic configuration."""
-        arbitrary_types_allowed = True
-        json_encoders = {
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
             np.ndarray: lambda x: x.tolist(),
             datetime: lambda x: x.isoformat()
         }
+    }
     
-    @validator("center")
-    def validate_center(cls, v):
+    @field_validator("center")
+    @classmethod
+    def validate_center(cls, v: Any) -> Optional[List[float]]:
         """Convert numpy array to list if needed."""
+        if v is None:
+            return None
         if isinstance(v, np.ndarray):
-            return v.tolist()
-        return v
+            result = v.tolist()
+            return cast(List[float], result)
+        if isinstance(v, list) and all(isinstance(x, (int, float)) for x in v):
+            return [float(x) for x in v]
+        raise ValueError("Center must be a numpy array, list of numbers, or None")
 
 class ClusteringState(BaseModel):
     """State of the clustering model."""
@@ -72,19 +79,21 @@ class ClusteringParams(BaseModel):
     max_samples_per_cluster: int = Field(1000, ge=1, description="Maximum samples to store per cluster")
     min_cluster_size: int = Field(10, ge=1, description="Minimum cluster size for pattern extraction")
     
-    @validator("n_clusters")
-    def validate_n_clusters(cls, v, values):
+    @field_validator("n_clusters")
+    @classmethod
+    def validate_n_clusters(cls, v: int) -> int:
         """Validate number of clusters."""
         if v < 1:
             raise ValueError("Number of clusters must be positive")
         return v
     
-    @validator("batch_size")
-    def validate_batch_size(cls, v, values):
+    @field_validator("batch_size")
+    @classmethod
+    def validate_batch_size(cls, v: int, info) -> int:
         """Validate batch size."""
         if v < 1:
             raise ValueError("Batch size must be positive")
-        if v < values.get("n_clusters", 20):
+        if v < info.data.get("n_clusters", 20):
             raise ValueError("Batch size should be at least as large as number of clusters")
         return v
 

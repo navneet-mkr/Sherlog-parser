@@ -5,7 +5,7 @@ Service layer for log parsing operations.
 import logging
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 from datetime import datetime
 import pandas as pd
 
@@ -24,7 +24,8 @@ class ParserService:
         llm_api_base: str = "http://localhost:11434",
         similarity_threshold: float = 0.8,
         batch_size: int = 32,
-        track_api_calls: bool = False
+        track_api_calls: bool = False,
+        cache_dir: str = "./cache"
     ):
         """Initialize parser service.
         
@@ -34,6 +35,7 @@ class ParserService:
             similarity_threshold: Threshold for template matching
             batch_size: Number of logs to process in each batch
             track_api_calls: Whether to track API calls
+            cache_dir: Directory for caching API calls
         """
         logger.info("Initializing ParserService")
         logger.info(f"Model: {llm_model}")
@@ -46,6 +48,7 @@ class ParserService:
         self.model_name = llm_model
         self.api_calls = 0
         self.cache_hits = 0
+        self.cache_dir = Path(cache_dir)
         
         # Initialize Ollama analyzer
         logger.info("Initializing Ollama analyzer")
@@ -308,4 +311,22 @@ class ParserService:
         """Get cache hit rate."""
         if not self.track_api_calls or self.api_calls == 0:
             return 0.0
-        return self.analyzer.cache_hits / self.analyzer.api_calls 
+        return self.analyzer.cache_hits / self.analyzer.api_calls
+    
+    def parse_logs_batch(
+        self,
+        logs: List[Tuple[str, int]],
+        batch_size: int = 32,
+        max_workers: int = 4
+    ) -> List[Tuple[str, Dict[str, str]]]:
+        """Parse a batch of logs in parallel.
+        
+        Args:
+            logs: List of (log_message, log_id) tuples
+            batch_size: Size of batches for LLM processing
+            max_workers: Maximum number of parallel workers
+            
+        Returns:
+            List of (template, parameters) tuples for each log
+        """
+        return self.parser.parse_logs_batch(logs, batch_size, max_workers) 

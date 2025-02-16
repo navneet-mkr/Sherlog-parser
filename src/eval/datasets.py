@@ -79,7 +79,7 @@ class LogDataset:
                 )
 
 class DatasetLoader:
-    """Handles loading of evaluation datasets."""
+    """Loader for evaluation datasets."""
     
     REQUIRED_COLUMNS = {
         'structured': {'Content'},  # Minimum required columns
@@ -306,6 +306,32 @@ class DatasetLoader:
         check_dir(self.logpub_dir, "logpub")
         
         return available
+    
+    def load_logs(self, system: str, dataset_type: str) -> pd.DataFrame:
+        """Load raw logs from dataset.
+        
+        Args:
+            system: System name (e.g., 'Apache')
+            dataset_type: Dataset type (e.g., 'loghub_2k')
+            
+        Returns:
+            DataFrame with 'Content' column containing raw logs
+        """
+        log_file = self.base_dir / "eval_datasets" / f"{dataset_type}" / system / f"{system}_2k.log"
+        return pd.read_csv(log_file, names=['Content'], encoding='utf-8')
+    
+    def load_templates(self, system: str, dataset_type: str) -> pd.DataFrame:
+        """Load ground truth templates.
+        
+        Args:
+            system: System name (e.g., 'Apache')
+            dataset_type: Dataset type (e.g., 'loghub_2k')
+            
+        Returns:
+            DataFrame with 'EventTemplate' column containing templates
+        """
+        template_file = self.base_dir / "eval_datasets" / f"{dataset_type}" / system / f"{system}_2k.log_templates.csv"
+        return pd.read_csv(template_file)
 
 # Default test datasets for initial development
 DEFAULT_TEST_DATASETS = {

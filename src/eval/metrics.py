@@ -5,20 +5,25 @@ from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 from sklearn.metrics import f1_score
+import pandas as pd
+import itertools
 
 @dataclass
 class EvaluationMetrics:
-    """Container for all evaluation metrics."""
-    grouping_accuracy: float
-    parsing_accuracy: float
-    f1_grouping_accuracy: float
-    f1_template_accuracy: float
-    grouping_granularity_distance: float
-    parsing_granularity_distance: float
-    avg_inference_time_ms: float
+    """Evaluation metrics for log parsing."""
+    system: str
+    dataset: str
     total_logs: int
     unique_templates: int
-    model_name: str
+    ground_truth_templates: int
+    grouping_accuracy: float = 0.0
+    parsing_accuracy: float = 0.0
+    f1_grouping_accuracy: float = 0.0
+    f1_template_accuracy: float = 0.0
+    grouping_granularity_distance: float = 0.0
+    parsing_granularity_distance: float = 0.0
+    avg_inference_time_ms: float = 0.0
+    model_name: str = ""
     total_api_calls: int = 0
     cache_hit_rate: float = 0.0
 
@@ -114,6 +119,40 @@ def calculate_parsing_accuracy(ground_truth_templates: Dict[int, str],
     
     return correct_templates / total_logs if total_logs > 0 else 0.0
 
+def calculate_f1_score(predicted: Dict[int, str], ground_truth: Dict[int, str]) -> float:
+    """Calculate F1 score for grouping."""
+    # Create binary matrix for pairs
+    n_logs = len(predicted)
+    true_pairs = np.zeros((n_logs, n_logs))
+    pred_pairs = np.zeros((n_logs, n_logs))
+    
+    # Fill matrices
+    for i, j in itertools.combinations(range(n_logs), 2):
+        true_pairs[i,j] = true_pairs[j,i] = ground_truth[i] == ground_truth[j]
+        pred_pairs[i,j] = pred_pairs[j,i] = predicted[i] == predicted[j]
+    
+    # Flatten and calculate F1
+    true_flat = true_pairs.flatten()
+    pred_flat = pred_pairs.flatten()
+    
+    return float(f1_score(true_flat, pred_flat))
+
+def calculate_template_f1_score(predicted: Dict[int, str], ground_truth: Dict[int, str]) -> float:
+    """Calculate F1 score for template matching."""
+    # Get unique templates
+    true_templates = set(ground_truth.values())
+    pred_templates = set(predicted.values())
+    
+    # Calculate precision and recall
+    true_positives = len(true_templates & pred_templates)
+    precision = true_positives / len(pred_templates) if pred_templates else 0
+    recall = true_positives / len(true_templates) if true_templates else 0
+    
+    # Calculate F1
+    if precision + recall == 0:
+        return 0.0
+    return 2 * (precision * recall) / (precision + recall)
+
 def calculate_f1_scores(ground_truth_groups: Dict[str, Set[int]],
                        predicted_groups: Dict[str, Set[int]]) -> Tuple[float, float]:
     """Calculate F1-scores for Grouping Accuracy (FGA) and Template Accuracy (FTA).
@@ -200,46 +239,61 @@ def calculate_granularity_distances(ground_truth_groups: Dict[str, Set[int]],
     
     return ggd, pgd
 
-def evaluate_parser_output(ground_truth_templates: Dict[int, str],
-                         predicted_templates: Dict[int, str],
-                         inference_times_ms: List[float],
-                         model_name: str) -> EvaluationMetrics:
-    """Evaluate parser output using all metrics.
+def evaluate_parser_output(
+    results_df: pd.DataFrame,
+    ground_truth_df: pd.DataFrame,
+    system: str,
+    dataset_type: str
+) -> EvaluationMetrics:
+    """Evaluate parser output against ground truth.
     
     Args:
-        ground_truth_templates: Dict mapping log ID to template
-        predicted_templates: Dict mapping log ID to template
-        inference_times_ms: List of inference times in milliseconds
-        model_name: Name of the model used for parsing
+        results_df: DataFrame with parsed results
+        ground_truth_df: DataFrame with ground truth templates
+        system: System name
+        dataset_type: Dataset type
         
     Returns:
-        EvaluationMetrics object containing all calculated metrics
+        EvaluationMetrics object
     """
-    # Convert templates to groups
-    ground_truth_groups = defaultdict(set)
-    predicted_groups = defaultdict(set)
+    # Convert to dictionaries for comparison
+    predicted_templates = {
+        i: template for i, template in enumerate(results_df['ParsedTemplate'])
+    }
     
-    for log_id, template in ground_truth_templates.items():
-        ground_truth_groups[template].add(log_id)
+    ground_truth_templates = {
+        i: template for i, template in enumerate(ground_truth_df['EventTemplate'])
+    }
     
-    for log_id, template in predicted_templates.items():
-        predicted_groups[template].add(log_id)
+    # Calculate metrics
+    total_logs = len(predicted_templates)
+    unique_predicted = len(set(predicted_templates.values()))
+    unique_ground_truth = len(set(ground_truth_templates.values()))
     
-    # Calculate all metrics
-    ga = calculate_grouping_accuracy(ground_truth_groups, predicted_groups)
-    pa = calculate_parsing_accuracy(ground_truth_templates, predicted_templates)
-    fga, fta = calculate_f1_scores(ground_truth_groups, predicted_groups)
-    ggd, pgd = calculate_granularity_distances(ground_truth_groups, predicted_groups)
+    # Calculate grouping accuracy
+    correct_groups = sum(1 for i, j in itertools.combinations(range(total_logs), 2)
+                        if (predicted_templates[i] == predicted_templates[j]) ==
+                        (ground_truth_templates[i] == ground_truth_templates[j]))
+    total_pairs = total_logs * (total_logs - 1) // 2
+    grouping_accuracy = correct_groups / total_pairs if total_pairs > 0 else 0
+    
+    # Calculate parsing accuracy
+    correct_templates = sum(1 for i in range(total_logs)
+                          if predicted_templates[i] == ground_truth_templates[i])
+    parsing_accuracy = correct_templates / total_logs if total_logs > 0 else 0
+    
+    # Calculate F1 scores
+    f1_grouping = calculate_f1_score(predicted_templates, ground_truth_templates)
+    f1_template = calculate_template_f1_score(predicted_templates, ground_truth_templates)
     
     return EvaluationMetrics(
-        grouping_accuracy=float(ga),
-        parsing_accuracy=float(pa),
-        f1_grouping_accuracy=float(fga),
-        f1_template_accuracy=float(fta),
-        grouping_granularity_distance=float(ggd),
-        parsing_granularity_distance=float(pgd),
-        avg_inference_time_ms=float(np.mean(inference_times_ms)),
-        total_logs=len(ground_truth_templates),
-        unique_templates=len(set(ground_truth_templates.values())),
-        model_name=model_name
+        system=system,
+        dataset=dataset_type,
+        total_logs=total_logs,
+        unique_templates=unique_predicted,
+        ground_truth_templates=unique_ground_truth,
+        grouping_accuracy=grouping_accuracy,
+        parsing_accuracy=parsing_accuracy,
+        f1_grouping_accuracy=f1_grouping,
+        f1_template_accuracy=f1_template
     ) 

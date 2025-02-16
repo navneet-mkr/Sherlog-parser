@@ -165,11 +165,39 @@ def evaluate_results(context, dataset: LogDataset,
                     inference_times: List[float]) -> EvaluationMetrics:
     """Evaluate parsing results for specified model."""
     try:
-        metrics = evaluate_parser_output(
-            ground_truth_templates=dataset.ground_truth_templates,
-            predicted_templates=templates,
-            inference_times_ms=inference_times,
-            model_name=context.op_config["model_name"]
+        # Create results dataframe
+        results_df = pd.DataFrame({
+            'Content': dataset.raw_logs,
+            'ParsedTemplate': [templates[i] for i in range(len(dataset.raw_logs))]
+        })
+        
+        # Create ground truth dataframe
+        ground_truth_df = pd.DataFrame({
+            'Content': dataset.raw_logs,
+            'EventTemplate': [dataset.ground_truth_templates[i] for i in range(len(dataset.raw_logs))]
+        })
+        
+        metrics_dict = evaluate_parser_output(
+            results_df=results_df,
+            ground_truth_df=ground_truth_df,
+            system=dataset.name.split('_')[0],  # Extract system name from dataset name
+            dataset_type=dataset.name.split('_')[1]  # Extract dataset type from dataset name
+        )
+        
+        # Convert to EvaluationMetrics object
+        metrics = EvaluationMetrics(
+            system=str(metrics_dict['system']),
+            dataset=str(metrics_dict['dataset']),
+            total_logs=int(metrics_dict['total_logs']),
+            unique_templates=int(metrics_dict['unique_templates']),
+            ground_truth_templates=int(metrics_dict['ground_truth_templates']),
+            grouping_accuracy=float(metrics_dict['grouping_accuracy']),
+            parsing_accuracy=float(metrics_dict['parsing_accuracy']),
+            f1_grouping_accuracy=float(metrics_dict['f1_grouping_accuracy']),
+            f1_template_accuracy=float(metrics_dict['f1_template_accuracy']),
+            grouping_granularity_distance=float(metrics_dict['grouping_granularity_distance']),
+            model_name=context.op_config["model_name"],
+            avg_inference_time_ms=sum(inference_times)/len(inference_times) if inference_times else 0.0
         )
         
         # Log metrics

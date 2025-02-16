@@ -202,83 +202,60 @@ class DatasetLoader:
         except Exception as e:
             raise DatasetValidationError(f"Error loading templates: {str(e)}")
     
-    def load_dataset(self, system: str, dataset_type: str = "loghub_2k") -> LogDataset:
-        """Load a specific dataset.
+    def load_logs(self, system: str, dataset_type: str) -> pd.DataFrame:
+        """Load logs for a specific system and dataset type.
         
         Args:
-            system: System name (e.g., 'Apache', 'Hadoop')
-            dataset_type: Either 'loghub_2k' or 'logpub'
+            system: System name (e.g., 'Apache')
+            dataset_type: Dataset type (e.g., 'loghub_2k')
             
         Returns:
-            LogDataset object containing raw logs and ground truth
-            
-        Raises:
-            DatasetNotFoundError: If dataset files not found
-            DatasetValidationError: If dataset format is invalid
+            DataFrame with logs and their templates
         """
-        try:
-            # Determine base directory
-            base = self.loghub_dir if dataset_type == "loghub_2k" else self.logpub_dir
-            system_dir = base / system
+        structured_log_path = os.path.join(
+            self.base_dir,
+            dataset_type,
+            system,
+            f"{system}_{dataset_type}.log_structured.csv"
+        )
+        
+        if not os.path.exists(structured_log_path):
+            raise FileNotFoundError(f"Structured log file not found: {structured_log_path}")
             
-            if not system_dir.exists():
-                raise DatasetNotFoundError(f"System directory not found: {system_dir}")
+        df = pd.read_csv(structured_log_path)
+        required_columns = {'LineId', 'Content', 'EventTemplate'}
+        if not all(col in df.columns for col in required_columns):
+            raise ValueError(f"Structured log file missing required columns: {required_columns}")
             
-            # Find required files
-            structured_file = next(system_dir.glob("*_2k.log_structured.csv"), None)
-            template_file = next(system_dir.glob("*_2k.log_templates.csv"), None)
+        return df
+
+    def load_dataset(self, system: str, dataset_type: str) -> LogDataset:
+        """Load a complete dataset including logs and templates.
+        
+        Args:
+            system: System name (e.g., 'Apache')
+            dataset_type: Dataset type (e.g., 'loghub_2k')
             
-            if not structured_file or not template_file:
-                raise DatasetNotFoundError(
-                    f"Required files not found in {system_dir}. "
-                    "Need *_2k.log_structured.csv and *_2k.log_templates.csv"
-                )
-            
-            # Load data
-            raw_logs, parameters, event_ids = self._load_structured_logs(structured_file)
-            event_templates = self._load_templates(template_file)
-            
-            # Map log IDs to templates using event IDs
-            templates = {}
-            for log_id, event_id in event_ids.items():
-                if event_id not in event_templates:
-                    raise DatasetValidationError(
-                        f"Missing template for EventId {event_id} in log {log_id}"
-                    )
-                templates[log_id] = event_templates[event_id]
-            
-            # Create dataset
-            dataset = LogDataset(
-                name=f"{system}_{dataset_type}",
-                system=system,
-                dataset_type=dataset_type,
-                raw_logs=raw_logs,
-                ground_truth_templates=templates,
-                ground_truth_parameters=parameters,
-                metadata={
-                    "structured_file": str(structured_file),
-                    "template_file": str(template_file),
-                    "total_logs": len(raw_logs),
-                    "unique_templates": len(set(templates.values()))
-                }
-            )
-            
-            # Validate dataset
-            dataset.validate()
-            
-            logger.info(
-                f"Loaded dataset {dataset.name} with {dataset.size} logs "
-                f"and {len(set(dataset.ground_truth_templates.values()))} unique templates"
-            )
-            
-            return dataset
-            
-        except (DatasetNotFoundError, DatasetValidationError) as e:
-            # Re-raise these as is
-            raise
-        except Exception as e:
-            # Wrap other exceptions
-            raise DatasetValidationError(f"Error loading dataset {system}: {str(e)}")
+        Returns:
+            LogDataset object containing logs and templates
+        """
+        logs_df = self.load_logs(system, dataset_type)
+        
+        # Extract unique templates and their IDs
+        templates_dict = dict(zip(logs_df['LineId'], logs_df['EventTemplate']))
+        
+        return LogDataset(
+            name=f"{system}_{dataset_type}",
+            system=system,
+            dataset_type=dataset_type,
+            raw_logs=logs_df['Content'].tolist(),
+            ground_truth_templates=templates_dict,
+            ground_truth_parameters={},  # Empty dict since we don't need parameters for evaluation
+            metadata={
+                "total_logs": len(logs_df),
+                "unique_templates": len(set(logs_df['EventTemplate']))
+            }
+        )
     
     def list_available_datasets(self) -> Dict[str, List[str]]:
         """List available datasets in the evaluation directory.
@@ -306,20 +283,6 @@ class DatasetLoader:
         check_dir(self.logpub_dir, "logpub")
         
         return available
-    
-    def load_logs(self, system: str, dataset_type: str) -> pd.DataFrame:
-        """Load raw logs from dataset.
-        
-        Args:
-            system: System name (e.g., 'Apache')
-            dataset_type: Dataset type (e.g., 'loghub_2k')
-            
-        Returns:
-            DataFrame with 'Content' column containing only the raw log messages
-        """
-        log_file = self.base_dir / f"{dataset_type}" / system / f"{system}_2k.log_structured.csv"
-        df = pd.read_csv(log_file, encoding='utf-8')
-        return pd.DataFrame({'Content': df['Content']})
     
     def load_templates(self, system: str, dataset_type: str) -> pd.DataFrame:
         """Load ground truth templates.

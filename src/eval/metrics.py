@@ -1,12 +1,13 @@
 """Module implementing evaluation metrics for log parsing."""
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 from sklearn.metrics import f1_score
 import pandas as pd
 import itertools
+from Levenshtein import distance
 
 @dataclass
 class EvaluationMetrics:
@@ -239,61 +240,67 @@ def calculate_granularity_distances(ground_truth_groups: Dict[str, Set[int]],
     
     return ggd, pgd
 
-def evaluate_parser_output(
-    results_df: pd.DataFrame,
-    ground_truth_df: pd.DataFrame,
-    system: str,
-    dataset_type: str
-) -> EvaluationMetrics:
+def calculate_template_similarity(template1: str, template2: str) -> float:
+    """Calculate similarity between two templates using normalized Levenshtein distance.
+    
+    Args:
+        template1: First template string
+        template2: Second template string
+        
+    Returns:
+        Similarity score between 0 and 1
+    """
+    max_len = max(len(template1), len(template2))
+    if max_len == 0:
+        return 1.0
+    return 1 - (distance(template1, template2) / max_len)
+
+def evaluate_parser_output(results_df: pd.DataFrame,
+                        ground_truth_df: pd.DataFrame,
+                        system: str,
+                        dataset_type: str = "loghub_2k") -> Dict[str, Union[str, int, float]]:
     """Evaluate parser output against ground truth.
     
     Args:
-        results_df: DataFrame with parsed results
-        ground_truth_df: DataFrame with ground truth templates
+        results_df: DataFrame with parser results
+        ground_truth_df: DataFrame with ground truth
         system: System name
         dataset_type: Dataset type
         
     Returns:
-        EvaluationMetrics object
+        Dictionary of evaluation metrics
     """
-    # Convert to dictionaries for comparison
-    predicted_templates = {
-        i: template for i, template in enumerate(results_df['ParsedTemplate'])
-    }
+    total_logs = len(results_df)
     
-    ground_truth_templates = {
-        i: template for i, template in enumerate(ground_truth_df['EventTemplate'])
-    }
+    # Extract templates
+    predicted_templates = results_df['ParsedTemplate'].tolist()
+    ground_truth_templates = ground_truth_df['EventTemplate'].tolist()
     
-    # Calculate metrics
-    total_logs = len(predicted_templates)
-    unique_predicted = len(set(predicted_templates.values()))
-    unique_ground_truth = len(set(ground_truth_templates.values()))
+    # Get unique templates
+    unique_predicted = len(set(predicted_templates))
+    unique_ground_truth = len(set(ground_truth_templates))
     
     # Calculate grouping accuracy
     correct_groups = sum(1 for i, j in itertools.combinations(range(total_logs), 2)
-                        if (predicted_templates[i] == predicted_templates[j]) ==
-                        (ground_truth_templates[i] == ground_truth_templates[j]))
+        if (results_df['ParsedTemplate'].iloc[i] == results_df['ParsedTemplate'].iloc[j]) ==
+           (ground_truth_df['EventTemplate'].iloc[i] == ground_truth_df['EventTemplate'].iloc[j]))
     total_pairs = total_logs * (total_logs - 1) // 2
     grouping_accuracy = correct_groups / total_pairs if total_pairs > 0 else 0
     
-    # Calculate parsing accuracy
-    correct_templates = sum(1 for i in range(total_logs)
-                          if predicted_templates[i] == ground_truth_templates[i])
-    parsing_accuracy = correct_templates / total_logs if total_logs > 0 else 0
+    # Calculate edit distance based similarity
+    template_similarities = []
+    for pred, truth in zip(predicted_templates, ground_truth_templates):
+        similarity = calculate_template_similarity(pred, truth)
+        template_similarities.append(similarity)
     
-    # Calculate F1 scores
-    f1_grouping = calculate_f1_score(predicted_templates, ground_truth_templates)
-    f1_template = calculate_template_f1_score(predicted_templates, ground_truth_templates)
+    avg_similarity = sum(template_similarities) / len(template_similarities)
     
-    return EvaluationMetrics(
-        system=system,
-        dataset=dataset_type,
-        total_logs=total_logs,
-        unique_templates=unique_predicted,
-        ground_truth_templates=unique_ground_truth,
-        grouping_accuracy=grouping_accuracy,
-        parsing_accuracy=parsing_accuracy,
-        f1_grouping_accuracy=f1_grouping,
-        f1_template_accuracy=f1_template
-    ) 
+    return {
+        "system": system,
+        "dataset": dataset_type,
+        "total_logs": total_logs,
+        "unique_templates_predicted": unique_predicted,
+        "unique_templates_ground_truth": unique_ground_truth,
+        "grouping_accuracy": grouping_accuracy,
+        "template_similarity": avg_similarity
+    } 

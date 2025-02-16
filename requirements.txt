@@ -55,4 +55,5 @@ huggingface-hub>=0.19.4
 torch>=2.1.2
 requests>=2.31.0
 tqdm>=4.66.1
-pygtrie>=2.5.0 
+pygtrie>=2.5.0
+python-Levenshtein>=0.21.1 

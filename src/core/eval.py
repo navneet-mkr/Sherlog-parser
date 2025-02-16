@@ -156,12 +156,29 @@ class Evaluator:
         ground_truth_df['EventTemplate'] = ground_truth_df['EventTemplate'].apply(self._normalize_template)
         
         # Calculate metrics
-        metrics = evaluate_parser_output(
+        metrics_dict = evaluate_parser_output(
             results_df,
             ground_truth_df,
             self.system,
             self.dataset_type
         )
+        
+        # Convert values to proper types
+        typed_metrics = {
+            'system': str(metrics_dict['system']),
+            'dataset': str(metrics_dict['dataset']),
+            'total_logs': int(metrics_dict['total_logs']),
+            'unique_templates': int(metrics_dict['unique_templates']),
+            'ground_truth_templates': int(metrics_dict['ground_truth_templates']),
+            'grouping_accuracy': float(metrics_dict['grouping_accuracy']),
+            'parsing_accuracy': float(metrics_dict['parsing_accuracy']),
+            'f1_grouping_accuracy': float(metrics_dict['f1_grouping_accuracy']),
+            'f1_template_accuracy': float(metrics_dict['f1_template_accuracy']),
+            'grouping_granularity_distance': float(metrics_dict['grouping_granularity_distance'])
+        }
+        
+        # Convert to EvaluationMetrics object
+        metrics = EvaluationMetrics(**typed_metrics)
         
         # Save results
         self._save_results(results_df, metrics)

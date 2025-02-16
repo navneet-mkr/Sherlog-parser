@@ -105,6 +105,8 @@ htmlcov/
 .tox/
 
 # Evaluation results and temporary files
+/output/
+/output/**
 /eval_results/
 /eval_results/**
 /tmp/

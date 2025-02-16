@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from dataclasses import asdict
 import pandas as pd
+import re
 
 from src.core.parser_service import ParserService
 from src.eval.datasets import DatasetLoader
@@ -74,6 +75,19 @@ class Evaluator:
             track_api_calls=track_api_calls
         )
     
+    def _normalize_template(self, template: str) -> str:
+        """Normalize template by converting all variable placeholders to <*>.
+        
+        Args:
+            template: Template string with variable placeholders
+            
+        Returns:
+            Normalized template with standardized placeholders
+        """
+        # Convert all variable placeholders to <*>
+        normalized = re.sub(r'<[^>]+>', '<*>', template)
+        return normalized
+
     def evaluate(self) -> EvaluationMetrics:
         """Run evaluation.
         
@@ -94,18 +108,23 @@ class Evaluator:
             output_dir=str(self.output_dir)
         )
         
-        # Convert results for metrics
+        # Normalize templates before comparison
         predicted_templates = {
-            row['log_id']: row['template'] 
+            row['log_id']: self._normalize_template(row['template'])
             for _, row in parsed_logs_df.iterrows()
+        }
+        
+        ground_truth_normalized = {
+            log_id: self._normalize_template(template)
+            for log_id, template in self.dataset.ground_truth_templates.items()
         }
         
         # Calculate metrics
         logger.info("Calculating metrics")
         metrics = evaluate_parser_output(
-            ground_truth_templates=self.dataset.ground_truth_templates,
+            ground_truth_templates=ground_truth_normalized,
             predicted_templates=predicted_templates,
-            inference_times_ms=[0] * len(predicted_templates),  # Not measuring time in simplified version
+            inference_times_ms=[0] * len(predicted_templates),
             model_name=self.parser.model_name
         )
         

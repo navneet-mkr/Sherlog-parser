@@ -67,6 +67,31 @@ def calculate_grouping_accuracy(ground_truth_groups: Dict[str, Set[int]],
     
     return correct_pairs / total_pairs if total_pairs > 0 else 0.0
 
+def _compare_templates(template1: str, template2: str) -> bool:
+    """Compare two templates for structural equality.
+    
+    Args:
+        template1: First template string
+        template2: Second template string
+        
+    Returns:
+        True if templates match structurally
+    """
+    # Split templates into parts
+    parts1 = template1.split('<*>')
+    parts2 = template2.split('<*>')
+    
+    # Check if they have same number of variable placeholders
+    if len(parts1) != len(parts2):
+        return False
+        
+    # Compare constant parts
+    for p1, p2 in zip(parts1, parts2):
+        if p1.strip() != p2.strip():
+            return False
+            
+    return True
+
 def calculate_parsing_accuracy(ground_truth_templates: Dict[int, str],
                              predicted_templates: Dict[int, str]) -> float:
     """Calculate Parsing Accuracy (PA) metric.
@@ -84,7 +109,7 @@ def calculate_parsing_accuracy(ground_truth_templates: Dict[int, str],
     correct_templates = sum(
         1 for log_id in ground_truth_templates
         if log_id in predicted_templates and 
-        ground_truth_templates[log_id] == predicted_templates[log_id]
+        _compare_templates(ground_truth_templates[log_id], predicted_templates[log_id])
     )
     
     return correct_templates / total_logs if total_logs > 0 else 0.0

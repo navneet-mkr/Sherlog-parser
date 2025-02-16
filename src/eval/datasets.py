@@ -216,7 +216,7 @@ class DatasetLoader:
             self.base_dir,
             dataset_type,
             system,
-            f"{system}_{dataset_type}.log_structured.csv"
+            f"{system}_2k.log_structured.csv"
         )
         
         if not os.path.exists(structured_log_path):

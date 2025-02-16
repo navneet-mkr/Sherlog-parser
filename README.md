@@ -4,25 +4,33 @@ A powerful, intelligent log parsing and analysis tool that leverages Large Langu
 
 ## 🚀 Quick Start (2 minutes)
 
+### Local Development Setup
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/sherlog-parser.git
 cd sherlog-parser
 
-# Install dependencies (with development tools)
-pip install -e ".[dev]"
-
-# Start with automatic Ollama configuration
-./start.sh
-
-# OR use your local Ollama installation
-./start.sh --use-local-ollama
-
-# OR connect to remote Ollama instance
-./start.sh --ollama-host http://your-ollama-server --ollama-port 11434
+# Run the local setup script (sets up everything automatically)
+./run_log_analyzer.sh
 ```
 
-That's it! Access the web interface at http://localhost:8501 🎉
+This will:
+- Set up Python virtual environment
+- Install dependencies
+- Start TimescaleDB in Docker
+- Install and start Ollama
+- Launch the Streamlit dashboard
+
+Access the web interface at http://localhost:8501 🎉
+
+### Docker Deployment
+
+For containerized deployment:
+```bash
+# Start all services using Docker Compose
+docker-compose up -d
+```
 
 ## 🏗️ Project Structure
 
@@ -32,15 +40,20 @@ The project follows a clean, modular architecture:
 sherlog-parser/
 ├── src/                    # Source code
 │   ├── core/              # Core functionality and common utilities
+│   │   ├── pipeline.py    # Log processing pipeline
+│   │   └── timeseries.py  # TimescaleDB integration
 │   ├── models/            # Model implementations
 │   ├── eval/              # Evaluation framework
 │   ├── ui/                # UI components
+│   │   └── log_analyzer.py # Streamlit dashboard
 │   ├── prompts/           # LLM prompt templates
 │   ├── config/            # Configuration management
 │   └── services/          # Service layer implementations
 ├── tests/                 # Test suite
 ├── docs/                  # Documentation
 ├── docker/               # Docker configuration
+├── docker-compose.yml    # Docker Compose configuration
+├── run_log_analyzer.sh   # Local development setup script
 ├── config.yaml           # Main configuration file
 ├── .env                  # Environment variables
 └── requirements.txt      # Python dependencies
@@ -49,12 +62,13 @@ sherlog-parser/
 ### Key Components
 
 - **Core Module**: Common utilities and core functionality
+  - **Pipeline**: End-to-end log processing pipeline
+  - **TimescaleDB Integration**: Time series database integration
 - **Models**: Implementations of different log parsing models
 - **Evaluation**: Comprehensive evaluation framework with metrics
+- **UI**: Streamlit-based interactive dashboard
 - **Configuration**: Centralized configuration management
 - **Services**: Business logic and service implementations
-
-For detailed information about the log parsing algorithm, see [Algorithm Documentation](docs/algorithm.md).
 
 ## ✨ Features
 
@@ -63,8 +77,82 @@ For detailed information about the log parsing algorithm, see [Algorithm Documen
 - 📊 Comprehensive evaluation metrics
 - 🎯 High accuracy and performance
 - 🔄 Efficient batch processing
+- 📈 Time series analysis with TimescaleDB
+- 🎨 Interactive Streamlit dashboard
 - 🔧 Modular and extensible architecture
 - 📝 Type-safe configuration management
+
+## 🗄️ TimescaleDB Integration
+
+The system now includes TimescaleDB integration for efficient time series analysis:
+
+- **Structured Storage**: Logs are stored with:
+  - Timestamp
+  - Log Level
+  - Component
+  - Template
+  - Parameters (as JSONB)
+  - Raw Message
+
+- **Time Series Queries**: Analyze logs over time:
+  ```sql
+  -- Error trends over time
+  SELECT time_bucket('1 hour', timestamp) AS hour,
+         level,
+         count(*) as count
+  FROM logs
+  WHERE level = 'ERROR'
+  GROUP BY hour
+  ORDER BY hour;
+  ```
+
+- **Component Analysis**:
+  ```sql
+  -- Most active components
+  SELECT component,
+         count(*) as count
+  FROM logs
+  GROUP BY component
+  ORDER BY count DESC
+  LIMIT 10;
+  ```
+
+- **Template Pattern Analysis**:
+  ```sql
+  -- Common log patterns
+  SELECT template,
+         count(*) as occurrence_count
+  FROM logs
+  GROUP BY template
+  ORDER BY occurrence_count DESC;
+  ```
+
+## 🖥️ Interactive Dashboard
+
+The Streamlit dashboard provides:
+
+1. **Log Upload**:
+   - Upload log files
+   - Process in batches
+   - Real-time progress tracking
+
+2. **Analysis Features**:
+   - Error trends visualization
+   - Component activity analysis
+   - Template pattern discovery
+   - Custom SQL queries
+
+3. **Time Series Analysis**:
+   - Time-based filtering
+   - Aggregation by time buckets
+   - Component-wise trends
+
+## 📋 Prerequisites
+
+- Python 3.9+
+- Docker (for TimescaleDB)
+- 8GB+ RAM recommended
+- Local Ollama installation (automatic with setup script)
 
 ## ⚙️ Configuration
 
@@ -192,14 +280,6 @@ The evaluation framework provides:
 - 🔍 Detailed error analysis
 - 📋 Automated report generation
 
-## 📋 Prerequisites
-
-- Python 3.9+
-- Docker and Docker Compose (for containerized deployment)
-- 8GB+ RAM recommended
-- (Optional) CUDA-capable GPU for improved performance
-- (Optional) Local Ollama installation
-
 ## 🔧 Troubleshooting
 
 1. **Configuration Issues**
@@ -237,10 +317,7 @@ See [Contributing Guide](CONTRIBUTING.md) for detailed guidelines.
 
 ## 📚 Documentation
 
-- [API Reference](docs/api.md)
 - [Algorithm Details](docs/algorithm.md)
-- [Configuration Guide](docs/configuration.md)
-- [Development Guide](docs/development.md)
 
 Build documentation locally:
 ```bash

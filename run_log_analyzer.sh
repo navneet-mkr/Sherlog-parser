@@ -20,14 +20,9 @@ if ! command -v pip3 &> /dev/null; then
     exit 1
 fi
 
-# Check if Docker and Docker Compose are installed
+# Check if Docker is installed (needed for TimescaleDB)
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}Docker is not installed. Please install Docker first.${NC}"
-    exit 1
-fi
-
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}Docker Compose is not installed. Please install Docker Compose first.${NC}"
     exit 1
 fi
 
@@ -40,17 +35,25 @@ source .venv/bin/activate
 echo -e "${BLUE}Installing Python dependencies...${NC}"
 pip install -r requirements.txt
 
-# Start TimescaleDB using Docker Compose
+# Start TimescaleDB using Docker
 echo -e "${BLUE}Setting up TimescaleDB...${NC}"
-docker-compose up -d timescaledb
-
-# Wait for TimescaleDB to be healthy
-echo "Waiting for TimescaleDB to be ready..."
-while ! docker-compose exec timescaledb pg_isready -U postgres > /dev/null 2>&1; do
-    echo -n "."
-    sleep 1
-done
-echo -e "\nTimescaleDB is ready!"
+if ! docker ps | grep -q timescaledb; then
+    echo "Starting TimescaleDB container..."
+    docker run -d --name timescaledb \
+        -p 5432:5432 \
+        -e POSTGRES_PASSWORD=password \
+        -e POSTGRES_USER=postgres \
+        -e POSTGRES_DB=logs \
+        timescale/timescaledb:latest-pg14
+    
+    # Wait for database to be ready
+    echo -n "Waiting for TimescaleDB..."
+    until docker exec timescaledb pg_isready -U postgres > /dev/null 2>&1; do
+        echo -n "."
+        sleep 1
+    done
+    echo -e "${GREEN}ready!${NC}"
+fi
 
 # Create .streamlit directory and config if they don't exist
 mkdir -p .streamlit
@@ -69,7 +72,10 @@ fi
 
 # Start Ollama service
 echo -e "${BLUE}Starting Ollama service...${NC}"
-ollama serve &
+if ! pgrep -x "ollama" > /dev/null; then
+    ollama serve &
+    sleep 2  # Give it a moment to start
+fi
 
 # Pull the Mistral model
 echo -e "${BLUE}Pulling Mistral model...${NC}"
@@ -80,12 +86,14 @@ mkdir -p cache
 
 # Start the Streamlit app
 echo -e "${GREEN}Setup complete! Starting Log Analysis Dashboard...${NC}"
+echo -e "${BLUE}You can access the dashboard at:${NC} http://localhost:8501"
 streamlit run src/ui/log_analyzer.py
 
 # Cleanup function
 cleanup() {
     echo -e "${BLUE}Cleaning up...${NC}"
-    docker-compose down
+    docker stop timescaledb
+    docker rm timescaledb
     pkill -f "ollama serve"
     deactivate
 }

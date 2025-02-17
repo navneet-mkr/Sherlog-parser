@@ -97,29 +97,21 @@ class Evaluator:
         """Run evaluation on the dataset."""
         logger.info("Starting evaluation")
         
-        # Load dataset
+        # Load dataset - use the same structured log file for both logs and ground truth
         dataset = DatasetLoader(str(self.base_dir))
-        logs_df = dataset.load_logs(self.system, self.dataset_type)
-        ground_truth_df = dataset.load_templates(self.system, self.dataset_type)
-        
-        # Initialize parser service
-        parser = ParserService(
-            llm_model=self.llm_model,
-            llm_api_base=self.llm_api_base,
-            similarity_threshold=self.similarity_threshold
-        )
+        structured_df = dataset.load_logs(self.system, self.dataset_type)
         
         # Process logs in batches
         parsed_templates = []
         parsed_parameters = []
-        total_logs = len(logs_df)
+        total_logs = len(structured_df)
         
         logger.info(f"Processing {total_logs} logs in batches of {self.batch_size}")
         
         # Prepare log batches with IDs
         log_batches = [
             list(zip(
-                logs_df['Content'].iloc[i:i + self.batch_size],
+                structured_df['Content'].iloc[i:i + self.batch_size],
                 range(i, min(i + self.batch_size, total_logs))
             ))
             for i in range(0, total_logs, self.batch_size)
@@ -130,8 +122,8 @@ class Evaluator:
             logger.info(f"Processing batch {batch_idx + 1}/{len(log_batches)}")
             
             try:
-                # Process batch in parallel
-                results = parser.parse_logs_batch(batch, self.batch_size)
+                # Process batch
+                results = self.parser.parse_logs_batch(batch, self.batch_size)
                 
                 # Collect results
                 batch_templates, batch_parameters = zip(*results)
@@ -146,21 +138,22 @@ class Evaluator:
         
         # Create results dataframe
         results_df = pd.DataFrame({
-            'Content': logs_df['Content'],
+            'Content': structured_df['Content'],
             'ParsedTemplate': parsed_templates,
             'Parameters': parsed_parameters
         })
         
         # Normalize templates for comparison
         results_df['ParsedTemplate'] = results_df['ParsedTemplate'].apply(self._normalize_template)
+        ground_truth_df = structured_df.copy()
         ground_truth_df['EventTemplate'] = ground_truth_df['EventTemplate'].apply(self._normalize_template)
         
-        # Calculate metrics
+        # Calculate metrics using row-by-row comparison
         metrics_dict = evaluate_parser_output(
-            results_df,
-            ground_truth_df,
-            self.system,
-            self.dataset_type
+            results_df=results_df,
+            ground_truth_df=ground_truth_df,
+            system=self.system,
+            dataset_type=self.dataset_type
         )
         
         # Convert values to proper types
@@ -168,14 +161,21 @@ class Evaluator:
             'system': str(metrics_dict['system']),
             'dataset': str(metrics_dict['dataset']),
             'total_logs': int(metrics_dict['total_logs']),
-            'unique_templates': int(metrics_dict['unique_templates']),
-            'ground_truth_templates': int(metrics_dict['ground_truth_templates']),
+            'unique_templates': int(metrics_dict['unique_templates_predicted']),
+            'ground_truth_templates': int(metrics_dict['unique_templates_ground_truth']),
             'grouping_accuracy': float(metrics_dict['grouping_accuracy']),
             'parsing_accuracy': float(metrics_dict['parsing_accuracy']),
             'f1_grouping_accuracy': float(metrics_dict['f1_grouping_accuracy']),
             'f1_template_accuracy': float(metrics_dict['f1_template_accuracy']),
-            'grouping_granularity_distance': float(metrics_dict['grouping_granularity_distance'])
+            'grouping_granularity_distance': float(metrics_dict.get('grouping_granularity_distance', 0.0))
         }
+        
+        # Add API tracking metrics if enabled
+        if self.track_api_calls:
+            typed_metrics.update({
+                'total_api_calls': self.api_calls,
+                'cache_hit_rate': self.cache_hits / self.api_calls if self.api_calls > 0 else 0.0
+            })
         
         # Convert to EvaluationMetrics object
         metrics = EvaluationMetrics(**typed_metrics)

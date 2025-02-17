@@ -8,6 +8,7 @@ from sklearn.metrics import f1_score
 import pandas as pd
 import itertools
 from Levenshtein import distance
+from sklearn.preprocessing import LabelEncoder
 
 @dataclass
 class EvaluationMetrics:
@@ -262,8 +263,8 @@ def evaluate_parser_output(results_df: pd.DataFrame,
     """Evaluate parser output against ground truth.
     
     Args:
-        results_df: DataFrame with parser results
-        ground_truth_df: DataFrame with ground truth
+        results_df: DataFrame with parser results (Content, ParsedTemplate)
+        ground_truth_df: DataFrame with ground truth (Content, EventTemplate)
         system: System name
         dataset_type: Dataset type
         
@@ -272,28 +273,55 @@ def evaluate_parser_output(results_df: pd.DataFrame,
     """
     total_logs = len(results_df)
     
-    # Extract templates
-    predicted_templates = results_df['ParsedTemplate'].tolist()
-    ground_truth_templates = ground_truth_df['EventTemplate'].tolist()
-    
     # Get unique templates
-    unique_predicted = len(set(predicted_templates))
-    unique_ground_truth = len(set(ground_truth_templates))
+    unique_predicted = len(set(results_df['ParsedTemplate']))
+    unique_ground_truth = len(set(ground_truth_df['EventTemplate']))
+    
+    # Calculate exact template matches
+    exact_matches = sum(
+        results_df['ParsedTemplate'].iloc[i] == ground_truth_df['EventTemplate'].iloc[i]
+        for i in range(total_logs)
+    )
+    parsing_accuracy = exact_matches / total_logs if total_logs > 0 else 0
     
     # Calculate grouping accuracy
-    correct_groups = sum(1 for i, j in itertools.combinations(range(total_logs), 2)
-        if (results_df['ParsedTemplate'].iloc[i] == results_df['ParsedTemplate'].iloc[j]) ==
-           (ground_truth_df['EventTemplate'].iloc[i] == ground_truth_df['EventTemplate'].iloc[j]))
-    total_pairs = total_logs * (total_logs - 1) // 2
+    correct_groups = 0
+    total_pairs = 0
+    
+    # Compare each pair of logs
+    for i in range(total_logs):
+        for j in range(i + 1, total_logs):
+            # Check if both pairs are grouped the same way in ground truth and prediction
+            same_group_truth = (ground_truth_df['EventTemplate'].iloc[i] == 
+                              ground_truth_df['EventTemplate'].iloc[j])
+            same_group_pred = (results_df['ParsedTemplate'].iloc[i] == 
+                             results_df['ParsedTemplate'].iloc[j])
+            
+            if same_group_truth == same_group_pred:
+                correct_groups += 1
+            total_pairs += 1
+    
     grouping_accuracy = correct_groups / total_pairs if total_pairs > 0 else 0
     
-    # Calculate edit distance based similarity
-    template_similarities = []
-    for pred, truth in zip(predicted_templates, ground_truth_templates):
-        similarity = calculate_template_similarity(pred, truth)
-        template_similarities.append(similarity)
+    # Calculate F1 scores
+    # Convert templates to numeric labels for sklearn
+    le = LabelEncoder()
     
-    avg_similarity = sum(template_similarities) / len(template_similarities)
+    truth_labels = le.fit_transform(ground_truth_df['EventTemplate'])
+    pred_labels = le.fit_transform(results_df['ParsedTemplate'])
+    
+    f1_grouping = float(f1_score(truth_labels, pred_labels, average='micro'))
+    f1_template = float(f1_score(truth_labels, pred_labels, average='macro'))
+    
+    # Calculate template similarity
+    similarities = []
+    for i in range(total_logs):
+        pred_template = results_df['ParsedTemplate'].iloc[i]
+        truth_template = ground_truth_df['EventTemplate'].iloc[i]
+        similarity = calculate_template_similarity(pred_template, truth_template)
+        similarities.append(similarity)
+    
+    avg_template_similarity = sum(similarities) / len(similarities)
     
     return {
         "system": system,
@@ -302,5 +330,8 @@ def evaluate_parser_output(results_df: pd.DataFrame,
         "unique_templates_predicted": unique_predicted,
         "unique_templates_ground_truth": unique_ground_truth,
         "grouping_accuracy": grouping_accuracy,
-        "template_similarity": avg_similarity
+        "parsing_accuracy": parsing_accuracy,
+        "f1_grouping_accuracy": f1_grouping,
+        "f1_template_accuracy": f1_template,
+        "template_similarity": avg_template_similarity
     } 

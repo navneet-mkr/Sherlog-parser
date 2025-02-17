@@ -294,8 +294,23 @@ class DatasetLoader:
         Returns:
             DataFrame with 'EventTemplate' column containing templates
         """
-        template_file = self.base_dir / f"{dataset_type}" / system / f"{system}_2k.log_templates.csv"
-        return pd.read_csv(template_file)
+        # Use the same structured log file for templates
+        structured_log_path = os.path.join(
+            self.base_dir,
+            dataset_type,
+            system,
+            f"{system}_2k.log_structured.csv"
+        )
+        
+        if not os.path.exists(structured_log_path):
+            raise FileNotFoundError(f"Structured log file not found: {structured_log_path}")
+            
+        df = pd.read_csv(structured_log_path)
+        required_columns = {'LineId', 'Content', 'EventTemplate'}
+        if not all(col in df.columns for col in required_columns):
+            raise ValueError(f"Structured log file missing required columns: {required_columns}")
+            
+        return df[['LineId', 'EventTemplate']]  # Return only needed columns
 
 # Default test datasets for initial development
 DEFAULT_TEST_DATASETS = {

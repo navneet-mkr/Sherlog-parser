@@ -333,4 +333,145 @@ mkdocs serve
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details. 
+MIT License - see [LICENSE](LICENSE) for details.
+
+## 🔍 Anomaly Detection
+
+The system now includes powerful real-time anomaly detection capabilities:
+
+### Command-line Interface
+
+Quick anomaly detection using the standalone script:
+```bash
+# Basic usage - analyze last 4 hours
+./src/analyze_anomalies.py --table logs
+
+# Analyze specific time window with filters
+./src/analyze_anomalies.py --hours 12 --level ERROR --component api-server
+
+# Adjust detection sensitivity
+./src/analyze_anomalies.py --eps 0.2 --min-samples 2 --table logs
+```
+
+### Features
+
+1. **Real-time Detection**:
+   - Embedding-based clustering (DBSCAN)
+   - Numeric anomaly detection
+   - Configurable sensitivity parameters
+   - Component-level analysis
+
+2. **Historical Analysis**:
+   ```bash
+   # Run with historical comparison (default)
+   ./src/analyze_anomalies.py --table logs
+   
+   # Skip historical analysis
+   ./src/analyze_anomalies.py --table logs --no-history
+   ```
+
+3. **Visualization & Reporting**:
+   - Interactive HTML timelines
+   - Historical trend plots
+   - Statistical comparisons
+   - CSV exports
+   ```bash
+   # Custom output directory
+   ./src/analyze_anomalies.py --output-dir "/path/to/reports"
+   ```
+
+4. **Filtering Options**:
+   ```bash
+   # Log level filtering
+   --level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+   
+   # Component filtering
+   --component your-component-name
+   ```
+
+5. **Integration Options**:
+   ```bash
+   # Custom database connection
+   --db-url "postgresql://user:pass@host:5432/db"
+   
+   # Custom Ollama endpoint
+   --ollama-url "http://your-ollama-host:11434"
+   ```
+
+### Web Interface
+
+The Streamlit dashboard includes anomaly detection features:
+
+1. **Real-time Monitoring**:
+   - Live anomaly detection
+   - Interactive visualizations
+   - Historical comparisons
+
+2. **Configuration**:
+   - Time window selection
+   - Sensitivity parameters
+   - Component filters
+   - Log level filters
+
+3. **Analysis Views**:
+   - Anomaly timeline
+   - Cluster distribution
+   - Error ratio trends
+   - Statistical metrics
+
+### Output Format
+
+The anomaly detection generates comprehensive reports:
+
+1. **CSV Export**:
+   ```csv
+   timestamp,level,component,message,is_embedding_anomaly,is_numeric_anomaly,cluster_label
+   2024-02-17T10:00:00,ERROR,api-server,"Connection timeout",true,false,1
+   ```
+
+2. **Visualization Files**:
+   - `anomaly_timeline_YYYYMMDD_HHMMSS.html`
+   - `historical_trends_YYYYMMDD_HHMMSS.html`
+
+3. **Console Output**:
+   ```
+   Anomaly Summary
+   ---------------
+   Total Anomalies: 42
+   Embedding Anomalies: 35
+   Numeric Anomalies: 7
+   Error Ratio: 15.2%
+
+   Historical Comparison
+   --------------------
+   Historical Mean: 25.3
+   Current vs Mean: +2.31σ
+   95th Percentile: 45.6
+   ```
+
+### Integration Examples
+
+1. **Automated Monitoring**:
+   ```bash
+   # Run every hour using cron
+   0 * * * * /path/to/analyze_anomalies.py --hours 1 --table logs
+   ```
+
+2. **Custom Analysis Pipeline**:
+   ```python
+   from src.core.pipeline import LogProcessingPipeline
+   from src.core.anomaly_incidents import IncidentAnomalyDetector
+
+   # Initialize
+   pipeline = LogProcessingPipeline(db_url="your-db-url")
+   detector = IncidentAnomalyDetector(pipeline=pipeline)
+
+   # Detect anomalies
+   anomalies = detector.detect_anomalies(
+       table_name="logs",
+       hours=4,
+       additional_filters={"level": "ERROR"}
+   )
+   ```
+
+For detailed API documentation, see [Anomaly Detection API](docs/anomaly_detection.md). 

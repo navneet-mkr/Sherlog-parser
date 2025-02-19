@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from src.core.pipeline import LogProcessingPipeline
 from src.core.timeseries import LogTimeSeriesDB
 from src.core.anomaly_explanation import AnomalyExplainer
+from src.core.log_prefilter import LogPreFilter, PreFilterConfig
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,9 @@ class IncidentAnomalyDetector:
         min_samples: int = 3,  # Smaller min_samples for higher recall
         numeric_std_threshold: float = 2.5,
         explain_anomalies: bool = True,  # Whether to generate explanations
-        max_explanations: int = 100  # Maximum number of anomalies to explain
+        max_explanations: int = 100,  # Maximum number of anomalies to explain
+        enable_prefilter: bool = False,  # Whether to enable pre-filtering
+        prefilter_config: Optional[PreFilterConfig] = None  # Pre-filter configuration
     ):
         """Initialize the anomaly detector.
         
@@ -36,6 +39,8 @@ class IncidentAnomalyDetector:
             numeric_std_threshold: Standard deviations for numeric outliers
             explain_anomalies: Whether to generate LLM explanations
             max_explanations: Maximum number of anomalies to explain
+            enable_prefilter: Whether to enable pre-filtering
+            prefilter_config: Pre-filter configuration
         """
         self.pipeline = pipeline
         self.eps = eps
@@ -43,11 +48,15 @@ class IncidentAnomalyDetector:
         self.numeric_std_threshold = numeric_std_threshold
         self.explain_anomalies = explain_anomalies
         self.max_explanations = max_explanations
+        self.enable_prefilter = enable_prefilter
         
         if explain_anomalies:
             self.explainer = AnomalyExplainer(
                 ollama_client=pipeline.ollama_analyzer
             )
+            
+        if enable_prefilter:
+            self.prefilter = LogPreFilter(prefilter_config)
 
     def detect_anomalies(
         self,
@@ -81,6 +90,30 @@ class IncidentAnomalyDetector:
             logger.warning(f"No logs found in the last {hours} hours")
             return pd.DataFrame()
             
+        # Apply pre-filtering if enabled
+        original_size = len(logs_df)
+        if self.enable_prefilter:
+            logs_df = self.prefilter.filter_logs(logs_df)
+            if logs_df.empty:
+                logger.warning("Pre-filter removed all logs, using original dataset")
+                logs_df = self.pipeline.query_logs(
+                    table_name=table_name,
+                    time_range=(start_time, end_time),
+                    limit=100000,
+                    **additional_filters if additional_filters else {}
+                )
+            elif len(logs_df) < self.min_samples:
+                logger.warning(
+                    f"Pre-filter reduced logs below min_samples ({len(logs_df)} < {self.min_samples}), "
+                    "using original dataset"
+                )
+                logs_df = self.pipeline.query_logs(
+                    table_name=table_name,
+                    time_range=(start_time, end_time),
+                    limit=100000,
+                    **additional_filters if additional_filters else {}
+                )
+                
         # Get embeddings from existing parsed results
         embeddings = np.array(logs_df['embedding'].tolist())
         

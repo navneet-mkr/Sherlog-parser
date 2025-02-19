@@ -11,6 +11,7 @@ from plotly.subplots import make_subplots
 
 from src.core.pipeline import LogProcessingPipeline
 from src.core.anomaly_incidents import IncidentAnomalyDetector
+from src.core.log_prefilter import PreFilterConfig
 
 def initialize_session_state():
     """Initialize session state variables."""
@@ -313,8 +314,9 @@ def main():
         help='Enter component name to filter'
     )
     
-    # Add explanation toggle to sidebar
+    # Add pre-filter settings to sidebar
     with st.sidebar.expander("Advanced Settings"):
+        # Existing explanation settings
         explain_anomalies = st.checkbox(
             'Generate Explanations',
             value=True,
@@ -328,6 +330,78 @@ def main():
                 value=100,
                 help='Maximum number of anomalies to explain'
             )
+            
+        # Add pre-filter settings
+        st.markdown("---")
+        enable_prefilter = st.checkbox(
+            'Enable Pre-filtering',
+            value=False,
+            help='Reduce log volume before analysis'
+        )
+        
+        if enable_prefilter:
+            # Priority levels
+            priority_levels = st.multiselect(
+                'Priority Levels',
+                ['ERROR', 'CRITICAL', 'WARNING', 'INFO', 'DEBUG'],
+                default=['ERROR', 'CRITICAL'],
+                help='Log levels to always keep'
+            )
+            
+            # Sampling ratios
+            st.markdown("##### Sampling Ratios")
+            sampling_ratios = {}
+            
+            cols = st.columns(2)
+            with cols[0]:
+                if 'INFO' not in priority_levels:
+                    sampling_ratios['INFO'] = st.slider(
+                        'INFO Logs',
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.1,
+                        step=0.05,
+                        help='Fraction of INFO logs to keep'
+                    )
+                if 'DEBUG' not in priority_levels:
+                    sampling_ratios['DEBUG'] = st.slider(
+                        'DEBUG Logs',
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.05,
+                        step=0.05,
+                        help='Fraction of DEBUG logs to keep'
+                    )
+                    
+            with cols[1]:
+                if 'WARNING' not in priority_levels:
+                    sampling_ratios['WARNING'] = st.slider(
+                        'WARNING Logs',
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.5,
+                        step=0.05,
+                        help='Fraction of WARNING logs to keep'
+                    )
+                    
+            # Deduplication settings
+            st.markdown("##### Deduplication")
+            max_duplicates = st.number_input(
+                'Max Duplicates',
+                min_value=1,
+                max_value=100,
+                value=5,
+                help='Maximum copies of identical messages to keep'
+            )
+            
+            # Create pre-filter config
+            prefilter_config = PreFilterConfig(
+                priority_levels=set(priority_levels),
+                level_sample_ratios=sampling_ratios,
+                max_duplicates=max_duplicates
+            )
+        else:
+            prefilter_config = None
     
     # Update detector parameters
     st.session_state.detector.eps = eps
@@ -335,6 +409,9 @@ def main():
     st.session_state.detector.explain_anomalies = explain_anomalies
     if explain_anomalies:
         st.session_state.detector.max_explanations = max_explanations
+    st.session_state.detector.enable_prefilter = enable_prefilter
+    if enable_prefilter:
+        st.session_state.detector.prefilter_config = prefilter_config
     
     # Build filters
     filters = {}

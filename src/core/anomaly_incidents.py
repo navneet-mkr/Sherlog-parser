@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.core.pipeline import LogProcessingPipeline
 from src.core.timeseries import LogTimeSeriesDB
+from src.core.anomaly_explanation import AnomalyExplainer
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,9 @@ class IncidentAnomalyDetector:
         pipeline: LogProcessingPipeline,
         eps: float = 0.3,  # Smaller eps for higher recall
         min_samples: int = 3,  # Smaller min_samples for higher recall
-        numeric_std_threshold: float = 2.5
+        numeric_std_threshold: float = 2.5,
+        explain_anomalies: bool = True,  # Whether to generate explanations
+        max_explanations: int = 100  # Maximum number of anomalies to explain
     ):
         """Initialize the anomaly detector.
         
@@ -31,12 +34,21 @@ class IncidentAnomalyDetector:
             eps: DBSCAN epsilon parameter (distance threshold)
             min_samples: DBSCAN min samples for core points
             numeric_std_threshold: Standard deviations for numeric outliers
+            explain_anomalies: Whether to generate LLM explanations
+            max_explanations: Maximum number of anomalies to explain
         """
         self.pipeline = pipeline
         self.eps = eps
         self.min_samples = min_samples
         self.numeric_std_threshold = numeric_std_threshold
+        self.explain_anomalies = explain_anomalies
+        self.max_explanations = max_explanations
         
+        if explain_anomalies:
+            self.explainer = AnomalyExplainer(
+                ollama_client=pipeline.ollama_analyzer
+            )
+
     def detect_anomalies(
         self,
         table_name: str,
@@ -106,6 +118,49 @@ class IncidentAnomalyDetector:
         # Add detection metadata
         anomalies_df['detection_time'] = datetime.now()
         anomalies_df['detection_window_hours'] = hours
+        
+        # Generate explanations if enabled
+        if self.explain_anomalies and not anomalies_df.empty:
+            # Store numeric deviations for explanation context
+            if 'numeric_anomalies' in locals():
+                # Create empty columns for numeric info
+                anomalies_df['numeric_fields'] = [[] for _ in range(len(anomalies_df))]
+                anomalies_df['numeric_deviations'] = [[] for _ in range(len(anomalies_df))]
+                
+                # Process each numeric anomaly
+                for field, anomaly_mask in numeric_anomalies.items():
+                    # Get anomalous rows for this field
+                    field_anomalies = anomalies_df[anomaly_mask]
+                    
+                    for idx in field_anomalies.index:
+                        row = field_anomalies.loc[idx]
+                        cluster = row['cluster_label']
+                        
+                        # Calculate deviation if in a valid cluster
+                        if cluster != -1:
+                            cluster_values = logs_df[logs_df['cluster_label'] == cluster][field]
+                            if len(cluster_values) >= 2:
+                                mean = cluster_values.mean()
+                                std = cluster_values.std()
+                                if std > 0:
+                                    dev = (float(row[field]) - mean) / std
+                                    # Append to existing lists
+                                    anomalies_df.at[idx, 'numeric_fields'].append(field)
+                                    anomalies_df.at[idx, 'numeric_deviations'].append(dev)
+            
+            # Generate explanations (limit to max_explanations)
+            explanation_df = anomalies_df.head(self.max_explanations)
+            explanations = self.explainer.explain_anomalies(explanation_df)
+            
+            # Add explanations to the full DataFrame
+            anomalies_df['explanation'] = pd.NA
+            anomalies_df.loc[explanations.index, 'explanation'] = explanations
+            
+            if len(anomalies_df) > self.max_explanations:
+                logger.info(
+                    f"Generated explanations for first {self.max_explanations} "
+                    f"of {len(anomalies_df)} anomalies"
+                )
         
         # Sort by timestamp
         anomalies_df = anomalies_df.sort_values('timestamp', ascending=False)

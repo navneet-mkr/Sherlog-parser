@@ -229,6 +229,40 @@ def render_historical_comparison(current_anomalies_df, historical_metrics):
             help='Change in error ratio compared to historical mean'
         )
 
+def display_summary(
+    anomalies_df: pd.DataFrame,
+    historical_metrics: Optional[Dict[str, Any]]
+):
+    """Display analysis summary in the console."""
+    # ... existing code ...
+    
+    # Add explanation examples if available
+    if 'explanation' in anomalies_df.columns:
+        explained_anomalies = anomalies_df[anomalies_df['explanation'].notna()]
+        if not explained_anomalies.empty:
+            st.subheader('Example Anomaly Explanations')
+            
+            for _, row in explained_anomalies.head(5).iterrows():
+                with st.expander(f"{row['level']} - {row['component'] if row['component'] else 'Unknown'}"):
+                    st.text(row['message'])
+                    st.markdown(f"**Explanation**: {row['explanation']}")
+                    
+                    details = []
+                    if row['is_embedding_anomaly']:
+                        if row['cluster_label'] == -1:
+                            details.append("• Pattern outlier (doesn't match known clusters)")
+                        else:
+                            details.append(f"• Unusual cluster (cluster {row['cluster_label']})")
+                    
+                    if row['is_numeric_anomaly']:
+                        for field, dev in zip(row['numeric_fields'], row['numeric_deviations']):
+                            details.append(f"• {field}: {dev:.1f}σ deviation")
+                            
+                    if details:
+                        st.markdown("**Technical Details**:")
+                        for detail in details:
+                            st.markdown(detail)
+
 def main():
     """Main Streamlit UI."""
     st.set_page_config(
@@ -279,9 +313,28 @@ def main():
         help='Enter component name to filter'
     )
     
+    # Add explanation toggle to sidebar
+    with st.sidebar.expander("Advanced Settings"):
+        explain_anomalies = st.checkbox(
+            'Generate Explanations',
+            value=True,
+            help='Use LLM to explain why logs are anomalous'
+        )
+        if explain_anomalies:
+            max_explanations = st.number_input(
+                'Max Explanations',
+                min_value=1,
+                max_value=1000,
+                value=100,
+                help='Maximum number of anomalies to explain'
+            )
+    
     # Update detector parameters
     st.session_state.detector.eps = eps
     st.session_state.detector.min_samples = min_samples
+    st.session_state.detector.explain_anomalies = explain_anomalies
+    if explain_anomalies:
+        st.session_state.detector.max_explanations = max_explanations
     
     # Build filters
     filters = {}
@@ -348,6 +401,9 @@ def main():
                             hours
                         )
                         render_historical_comparison(anomalies_df, historical_metrics)
+                    
+                    # Display summary
+                    display_summary(anomalies_df, historical_metrics)
                     
                     # Export option
                     if st.download_button(
